@@ -223,9 +223,10 @@ server <- function(input, output, session) {
     p <- pending_selection()
     d <- dataset()
     if(!is.null(p)) req(input$x%in%names(d),input$y%in%names(d),
-      input$group==".none" || input$group%in%names(d))
+      is.numeric(d[[input$y]]),input$group==".none" || input$group%in%names(d))
     shiny::validate(need(input$x%in%names(d),"La columna X seleccionada no existe."),
       need(input$y%in%names(d),"La columna Y seleccionada no existe."),
+      need(is.numeric(d[[input$y]]),"La columna Y debe ser numérica."),
       need(input$group==".none" || input$group%in%names(d),"La columna de grupo no existe."))
     TRUE
   })
@@ -233,7 +234,7 @@ server <- function(input, output, session) {
     p <- pending_selection()
     d <- isolate(dataset())
     if(!is.null(p) && !is.null(input$x) && !is.null(input$y) && !is.null(input$group) &&
-       input$x%in%names(d) && input$y%in%names(d) &&
+       input$x%in%names(d) && input$y%in%names(d) && is.numeric(d[[input$y]]) &&
        (input$group==".none" || input$group%in%names(d))) pending_selection(NULL)
   },priority=90)
   physical_data <- reactive({
