@@ -15,6 +15,8 @@ tryCatch({
     app$set_inputs(kind=kind,multipanel=TRUE)
     app$wait_for_idle()
     stopifnot(app$get_js("document.querySelectorAll('.shiny-output-error').length")==0)
+    app$set_inputs(inspector="Exportar")
+    app$wait_for_idle()
     for(fmt in c("svg","pdf")) {
       f <- tempfile(fileext=paste0(".",fmt))
       app$get_download(fmt,filename=f)
