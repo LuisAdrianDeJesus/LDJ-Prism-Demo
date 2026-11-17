@@ -1,7 +1,7 @@
 name: Clean Linux R 4.6.0 deployment
 on:
   push:
-    branches: [demo]
+    branches: [main, demo]
     paths: ['app.R', 'R/**', 'tests/**', '.github/workflows/clean-r.yml']
   workflow_dispatch:
 permissions:
@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: demo
+          ref: ${{ github.ref_name }}
       - uses: r-lib/actions/setup-r@v2
         with:
           r-version: '4.6.0'
@@ -55,4 +55,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add manifest.json
           git diff --cached --quiet || git commit -m "build: regenerate verified manifest with R 4.6.0"
-          git push origin HEAD:demo
+          git push origin "HEAD:$GITHUB_REF_NAME"
