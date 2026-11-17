@@ -69,9 +69,9 @@ p(if(private_mode) "Entorno privado: datos de usuario habilitados." else "Demo s
       selectInput("decimal", "Separador decimal", c("Punto"=".", "Coma"=",")),
       actionButton("apply_grid", "Aplicar tabla al gráfico"),
       actionButton("reset_grid", "Restaurar original"),
-      selectInput("x", "Variable X", choices = NULL),
-      selectInput("y", "Variable Y (numérica)", choices = NULL),
-      selectInput("group", "Color / grupo", choices = NULL)
+      selectInput("x", "Variable X", choices = names(demo_data), selected="Concentracion_uM"),
+      selectInput("y", "Variable Y (numérica)", choices = names(demo_data)[vapply(demo_data,is.numeric,logical(1))], selected="Viabilidad_pct"),
+      selectInput("group", "Color / grupo", choices = c("Sin agrupación"=".none",stats::setNames(names(demo_data),names(demo_data))),selected="Compuesto")
 ),
 tabPanel("Gráfica",
 selectInput("module", "Análisis", c("Editor universal"="universal","Citotoxicidad MTT"="mtt","Actividad farmacológica"="activity","Potencia y seguridad"="safety")),
@@ -217,18 +217,39 @@ server <- function(input, output, session) {
     working(hot_to_r(input$grid))
   })
   observeEvent(input$reset_grid, working(source_data()))
-  physical_data <- reactive(prepare_controls(dataset(),input$x,input$y,
-    if(is.null(input$control_label_default)) "No tratado" else input$control_label_default,
-    if(is.null(input$control_type_default)) "untreated" else input$control_type_default,
-    if(identical(input$group,".none")) NULL else input$group))
+  pending_selection <- reactiveVal(NULL)
+  selection_ready <- reactive({
+    req(input$x,input$y,input$group)
+    p <- pending_selection()
+    if(!is.null(p)) req(identical(input$x,p$x),identical(input$y,p$y),identical(input$group,p$group))
+    d <- dataset()
+    shiny::validate(need(input$x%in%names(d),"La columna X seleccionada no existe."),
+      need(input$y%in%names(d),"La columna Y seleccionada no existe."),
+      need(input$group==".none" || input$group%in%names(d),"La columna de grupo no existe."))
+    TRUE
+  })
+  observeEvent(list(input$x,input$y,input$group), {
+    p <- pending_selection()
+    if(!is.null(p) && identical(input$x,p$x) && identical(input$y,p$y) &&
+       identical(input$group,p$group)) pending_selection(NULL)
+  },priority=90)
+  physical_data <- reactive({
+    req(selection_ready())
+    prepare_controls(dataset(),input$x,input$y,
+      if(is.null(input$control_label_default)) "No tratado" else input$control_label_default,
+      if(is.null(input$control_type_default)) "untreated" else input$control_type_default,
+      if(identical(input$group,".none")) NULL else input$group)
+  })
   visual_data <- reactive(expand_control_contexts(physical_data(),if(identical(input$group,".none")) NULL else input$group))
   mapped <- reactive({
+    req(selection_ready())
     d <- visual_data()
     # Independent fits use only rows with measured concentration; no fabricated zero.
     d <- d[!d$.is_control | is.finite(d[[input$x]]),,drop=FALSE]
     map_data(d,input$x,input$y,input$group,input$decimal)
   })
   inference_data <- reactive({
+    req(selection_ready())
     d <- visual_data()
     controls <- d[d$.is_control,,drop=FALSE]
     if(!nrow(controls) || any(!controls$.eligible)) stop("Seleccione controles elegibles con procedencia completa.")
@@ -237,6 +258,7 @@ server <- function(input, output, session) {
   })
 
   analysis <- reactive({
+    req(selection_ready())
     if(is.null(input$module) || input$module=="universal") return(NULL)
     if(input$module=="safety") return(list(table=selectivity(input$ic50_value,
       input$cc20_value,input$cc50_value,input$ic_unit,input$cc_unit)))
@@ -285,18 +307,21 @@ server <- function(input, output, session) {
   })
 
   observeEvent(dataset(), {
-    d <- dataset()
-    cols <- names(d)
-    numeric_cols <- cols[vapply(d, is.numeric, logical(1))]
-    updateSelectInput(session, "x", choices = cols,
-                      selected = if ("Concentracion_uM" %in% cols) "Concentracion_uM" else cols[1])
-    updateSelectInput(session, "y", choices = numeric_cols,
-                      selected = if ("Viabilidad_pct" %in% numeric_cols)
-                        "Viabilidad_pct" else numeric_cols[1])
-    updateSelectInput(session, "group",
-                      choices = c("Sin agrupación" = ".none", stats::setNames(cols, cols)),
-                      selected = if ("Compuesto" %in% cols) "Compuesto" else ".none")
-  })
+    d <- dataset(); cols <- names(d); numeric_cols <- cols[vapply(d,is.numeric,logical(1))]
+    choose <- function(current,choices,preferred) {
+      if(!is.null(current) && current%in%choices) current else
+        if(preferred%in%choices) preferred else if(length(choices)) choices[1] else ""
+    }
+    proposed <- list(x=choose(isolate(input$x),cols,"Concentracion_uM"),
+      y=choose(isolate(input$y),numeric_cols,"Viabilidad_pct"),
+      group=choose(isolate(input$group),c(".none",cols),"Compuesto"))
+    pending_selection(proposed)
+    for(id in c("x","y","group")) freezeReactiveValue(input,id)
+    updateSelectInput(session,"x",choices=cols,selected=proposed$x)
+    updateSelectInput(session,"y",choices=numeric_cols,selected=proposed$y)
+    updateSelectInput(session,"group",choices=c("Sin agrupación"=".none",stats::setNames(cols,cols)),selected=proposed$group)
+    if(!length(numeric_cols)) showNotification("La tabla no contiene columnas numéricas para Y.",type="error")
+  },priority=100)
 
   output$custom_color_inputs <- renderUI({
     req(input$palette == "Personalizada", input$group)
@@ -344,6 +369,7 @@ server <- function(input, output, session) {
     }
   )
   plot_builder <- reactive({
+    req(selection_ready())
     d <- visual_data()
     shiny::validate(
       need(nrow(d) > 0, "El archivo está vacío."),
@@ -452,6 +478,7 @@ server <- function(input, output, session) {
     p
   })
   final_plot <- reactive({
+    req(selection_ready())
     if(identical(input$module,"safety")) {
       z <- analysis()$table
       safety <- ggplot(data.frame(parameter=c("IC50","CC20","CC50"),

@@ -24,12 +24,14 @@ jobs:
           options(repos=c(CRAN="https://packagemanager.posit.co/cran/__linux__/jammy/latest"))
           install.packages(c("shiny","ggplot2","svglite","colourpicker",
             "rhandsontable","readxl","jsonlite","drc","multcomp","patchwork",
-            "rsconnect","writexl","cpp11","progress","RcppEigen","RcppArmadillo"),
+            "rsconnect","writexl","shinytest2","cpp11","progress","RcppEigen","RcppArmadillo"),
             Ncpus=2)
       - name: Synthetic regression and Shiny tests
         run: |
           Rscript tests/unit.R
           Rscript tests/smoke.R
+      - name: Chromium first-load and figure export tests
+        run: Rscript tests/startup-browser.R
       - name: Regenerate manifest in installed environment
         shell: Rscript {0}
         run: |
