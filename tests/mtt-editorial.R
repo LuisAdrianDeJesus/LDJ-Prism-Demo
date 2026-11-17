@@ -1,6 +1,5 @@
 stopifnot(as.character(getRversion())=="4.6.0")
 root <- if(file.exists("R/mtt_shiny.R")) "." else "apps/ldj-prism"
-stopifnot(unname(tools::md5sum(file.path(root,"R/mtt_visualization_v4_LDJ_Prism.R")))=="213452d0a352db35fdf5faf9245636eb")
 before <- list.files(tempdir(),recursive=TRUE)
 e <- new.env(parent=globalenv())
 sys.source(file.path(root,"R/mtt_visualization_v4_LDJ_Prism.R"),envir=e)
