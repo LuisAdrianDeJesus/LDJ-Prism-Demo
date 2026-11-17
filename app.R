@@ -319,7 +319,6 @@ server <- function(input, output, session) {
       y=choose(isolate(input$y),numeric_cols,"Viabilidad_pct"),
       group=choose(isolate(input$group),c(".none",cols),"Compuesto"))
     pending_selection(proposed)
-    for(id in c("x","y","group")) freezeReactiveValue(input,id)
     updateSelectInput(session,"x",choices=cols,selected=proposed$x)
     updateSelectInput(session,"y",choices=numeric_cols,selected=proposed$y)
     updateSelectInput(session,"group",choices=c("Sin agrupación"=".none",stats::setNames(cols,cols)),selected=proposed$group)
