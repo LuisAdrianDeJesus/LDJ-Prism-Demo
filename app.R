@@ -272,6 +272,7 @@ server <- function(input, output, session) {
     }
     pal[ldj_mtt_defaults()$order] <- colors
     cfg <- list(palette=pal,figure_title=input$plot_title,x_label=input$x_label,y_label=input$y_label,
+      control_label=input$control_label_default,
       font_size=input$font_size,font_family=input$font_family,show_points=input$points,
       point_shape=as.integer(input$point_shape),point_size=input$point_size,
       summary_measure=input$dispersion,x_scale=input$x_scale,panels=mtt_styles(),

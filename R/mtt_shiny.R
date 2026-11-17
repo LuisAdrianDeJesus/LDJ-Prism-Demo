@@ -48,6 +48,9 @@ ldj_mtt_editor_build <- function(bundle,config=list()) {
       all(ldj_mtt_defaults()$order%in%bundle$orig$drug))
   }
   cfg <- ldj_mtt_style(config)
+  cfg$control_label <- paste(strwrap(cfg$control_label,width=12),collapse="\n")
+  if(is.null(config$shared_control_label))
+    cfg$shared_control_label <- paste0(cfg$control_label,"\n(compartido)")
   for(values in list(bundle$dunnett_shared$p_adjusted_dunnett,bundle$dunnett_original$p_value_dunnett_adjusted))
     if(any(is.finite(values) & (values<0 | values>1))) stop("Valores p fuera de [0,1].")
   if(!identical(cfg$concentration_unit,"µM")) stop("Convierta datos, parámetros e IC antes de cambiar unidades.")
@@ -61,7 +64,9 @@ ldj_mtt_editor_build <- function(bundle,config=list()) {
       if(!is.null(pc$y_limits) && (length(pc$y_limits)!=2 || any(!is.finite(pc$y_limits)) || diff(pc$y_limits)<=0)) stop("Límites Y inválidos.")
       if(!is.null(pc$x_limits) && (length(pc$x_limits)!=2 || any(!is.finite(pc$x_limits)) || diff(pc$x_limits)<=0 || (j==2 && min(pc$x_limits)<=0))) stop("Límites X inválidos; curvas requieren dosis positivas.")
       p <- if(j==1) ldj_mtt_make_bar(bundle,drug,tag,cfg) else ldj_mtt_make_curve(bundle,drug,tag,cfg)
-      if(j==1) p <- p + ggplot2::theme(axis.text.x=ggplot2::element_text(angle=35,hjust=1,vjust=1))
+      if(j==1) p <- p + ggplot2::theme(
+        axis.text.x=ggplot2::element_text(angle=35,hjust=1,vjust=1),
+        plot.margin=ggplot2::margin(8,11,8,32))
       if(j==2) {
         # Explicit alternative for zero-dose controls; no artificial log dose.
         p <- p + ggplot2::labs(subtitle="Control y réplicas: panel de barras contiguo")
