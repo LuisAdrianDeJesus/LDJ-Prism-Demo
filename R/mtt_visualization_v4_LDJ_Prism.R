@@ -230,13 +230,17 @@ ldj_mtt_make_bar <- function(bundle, drug, tag, config = ldj_mtt_defaults()) {
     ggplot2::scale_x_discrete(labels = labels) +
     ggplot2::scale_y_continuous(breaks = cfg$y_breaks,
       expand = ggplot2::expansion(mult = c(0,.025))) +
-    ggplot2::coord_cartesian(ylim = cfg$y_limits) +
+    # The shared-control label is intentionally multiline.  Extra bottom
+    # margin and unclipped drawing prevent it from being silently truncated
+    # in the 4x2 editorial layout while preserving the category order.
+    ggplot2::coord_cartesian(ylim = cfg$y_limits, clip = "off") +
     ggplot2::labs(
       title = if (!is.null(cfg$title)) cfg$title else paste0(tag, ". ",
         cfg$short[[drug]], " cell viability"),
       x = if (!is.null(cfg$x_label)) cfg$x_label else paste0("Concentration (", cfg$concentration_unit, ")"),
       y = if (!is.null(cfg$y_label)) cfg$y_label else "Cell viability (%)") +
-    ldj_mtt_theme(cfg)
+    ldj_mtt_theme(cfg) +
+    ggplot2::theme(plot.margin = ggplot2::margin(8, 11, 24, 32))
   if (isTRUE(cfg$show_points)) {
     p <- p + ggplot2::geom_point(data = x,
       ggplot2::aes(x = dose, y = viability), inherit.aes = FALSE,
@@ -417,3 +421,4 @@ ldj_mtt_export <- function(result, filename,
 #   output$figure <- shiny::renderPlot(result$figure)
 #   ldj_mtt_export(result, "MTT_4x2.svg")
 # No data files or RDS models should be uploaded to the public demo.
+
