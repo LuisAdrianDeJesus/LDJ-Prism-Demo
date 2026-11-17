@@ -35,7 +35,7 @@ stopifnot(!any(vapply(nd$panels$B$layers,function(layer) inherits(layer$geom,"Ge
 dir.create("test-artifacts",showWarnings=FALSE)
 for(ext in c("svg","pdf","png")) {
   path <- file.path("test-artifacts",paste0("MTT-4x2.",ext))
-  ldj_mtt_export(out,path,width=12,height=18,dpi=600)
+  ldj_mtt_editor_export(out,path,width=12,height=18,dpi=600)
   stopifnot(file.info(path)$size>10000)
 }
 svg <- paste(readLines("test-artifacts/MTT-4x2.svg",warn=FALSE),collapse="\n")

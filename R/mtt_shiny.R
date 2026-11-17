@@ -61,6 +61,7 @@ ldj_mtt_editor_build <- function(bundle,config=list()) {
       if(!is.null(pc$y_limits) && (length(pc$y_limits)!=2 || any(!is.finite(pc$y_limits)) || diff(pc$y_limits)<=0)) stop("Límites Y inválidos.")
       if(!is.null(pc$x_limits) && (length(pc$x_limits)!=2 || any(!is.finite(pc$x_limits)) || diff(pc$x_limits)<=0 || (j==2 && min(pc$x_limits)<=0))) stop("Límites X inválidos; curvas requieren dosis positivas.")
       p <- if(j==1) ldj_mtt_make_bar(bundle,drug,tag,cfg) else ldj_mtt_make_curve(bundle,drug,tag,cfg)
+      if(j==1) p <- p + ggplot2::theme(axis.text.x=ggplot2::element_text(angle=35,hjust=1,vjust=1))
       if(j==2) {
         # Explicit alternative for zero-dose controls; no artificial log dose.
         p <- p + ggplot2::labs(subtitle="Control y réplicas: panel de barras contiguo")
@@ -76,9 +77,22 @@ ldj_mtt_editor_build <- function(bundle,config=list()) {
     }
   }
   figure <- patchwork::wrap_plots(plots,ncol=2,nrow=4,byrow=TRUE) +
-    patchwork::plot_annotation(title=cfg$figure_title,caption=cfg$plot_caption)
+    patchwork::plot_annotation(title=cfg$figure_title,
+      caption=paste(strwrap(cfg$plot_caption,width=130),collapse="\n"))
   list(figure=figure,panels=plots,config=cfg,audit=list(
     synthetic=isTRUE(bundle$synthetic),physical_controls=bundle$controls,
     shared_physical_n=nrow(bundle$controls),shared_visual_n=2*nrow(bundle$controls),
     inference="No inference is recomputed by this renderer"))
+}
+
+# Cairo embeds Unicode-capable fonts; the upstream pdf device substitutes dashes.
+# Keep upstream export unchanged and delegate PNG/SVG to it.
+ldj_mtt_editor_export <- function(result,filename,width=result$config$plot_width,
+                                  height=result$config$plot_height,dpi=result$config$dpi) {
+  if(tolower(tools::file_ext(filename))!="pdf")
+    return(ldj_mtt_export(result,filename,width,height,dpi))
+  if(!capabilities("cairo")) stop("La exportación PDF editorial requiere Cairo.")
+  ggplot2::ggsave(filename,plot=result$figure,device=grDevices::cairo_pdf,
+    width=width,height=height,units="in",bg="white",limitsize=FALSE)
+  invisible(normalizePath(filename,mustWork=TRUE))
 }

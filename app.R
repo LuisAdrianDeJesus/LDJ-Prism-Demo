@@ -645,6 +645,14 @@ server <- function(input, output, session) {
             "columnas · datos", if(private_mode) "de sesión privada" else "sintéticos"))
   })
   export_plot <- function(file, format) {
+    if(identical(input$figure_template,"mtt4x2")) {
+      # Shiny temporary download paths may not carry a file extension.
+      target <- tempfile(fileext=paste0(".",format))
+      on.exit(unlink(target),add=TRUE)
+      ldj_mtt_editor_export(mtt_result(),target,input$width,input$height,as.integer(input$dpi))
+      file.copy(target,file,overwrite=TRUE)
+      return(invisible(file))
+    }
     ggplot2::ggsave(
       filename = file, plot = final_plot(), device = format,
       width = input$width, height = input$height,
