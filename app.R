@@ -221,8 +221,9 @@ server <- function(input, output, session) {
   selection_ready <- reactive({
     req(input$x,input$y,input$group)
     p <- pending_selection()
-    if(!is.null(p)) req(identical(input$x,p$x),identical(input$y,p$y),identical(input$group,p$group))
     d <- dataset()
+    if(!is.null(p)) req(input$x%in%names(d),input$y%in%names(d),
+      input$group==".none" || input$group%in%names(d))
     shiny::validate(need(input$x%in%names(d),"La columna X seleccionada no existe."),
       need(input$y%in%names(d),"La columna Y seleccionada no existe."),
       need(input$group==".none" || input$group%in%names(d),"La columna de grupo no existe."))
@@ -230,8 +231,10 @@ server <- function(input, output, session) {
   })
   observeEvent(list(input$x,input$y,input$group), {
     p <- pending_selection()
-    if(!is.null(p) && identical(input$x,p$x) && identical(input$y,p$y) &&
-       identical(input$group,p$group)) pending_selection(NULL)
+    d <- isolate(dataset())
+    if(!is.null(p) && !is.null(input$x) && !is.null(input$y) && !is.null(input$group) &&
+       input$x%in%names(d) && input$y%in%names(d) &&
+       (input$group==".none" || input$group%in%names(d))) pending_selection(NULL)
   },priority=90)
   physical_data <- reactive({
     req(selection_ready())
