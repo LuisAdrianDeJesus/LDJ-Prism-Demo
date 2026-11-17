@@ -101,3 +101,4 @@ ldj_mtt_editor_export <- function(result,filename,width=result$config$plot_width
     width=width,height=height,units="in",bg="white",limitsize=FALSE)
   invisible(normalizePath(filename,mustWork=TRUE))
 }
+
