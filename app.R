@@ -7,6 +7,8 @@ library(colourpicker)
 library(rhandsontable)
 library(readxl)
 source(if(file.exists("R/analysis.R")) "R/analysis.R" else "apps/ldj-prism/R/analysis.R", local=TRUE)
+for(module_file in c("mtt_visualization_v4_LDJ_Prism.R","mtt_shiny.R"))
+  source(file.path(if(dir.exists("R")) "R" else "apps/ldj-prism/R",module_file),local=TRUE)
 private_mode <- identical(Sys.getenv("LDJ_PRISM_MODE"), "private")
 
 demo_data <- local({
@@ -54,13 +56,16 @@ ui <- fluidPage(
     .well { background: white; border: 1px solid #dde3e9; }
     .title-line { margin-bottom: 18px; }
     .help-note { color: #56616c; font-size: 12px; }
+    .mtt-preview { overflow: auto; background: white; }
+    @media print { .sidebar-panel, .title-line, details { display:none; }
+      .main-panel { width:100%; } .mtt-preview { overflow:visible; } }
   "))),
   div(class = "title-line",
       h2("LDJ Prism", style = "margin-bottom: 3px;"),
       p("Laboratorio de Virología Molecular · Editor de figuras con R y ggplot2",
         class = "help-note")),
   sidebarLayout(
-    sidebarPanel(width = 4,
+    sidebarPanel(width = 3, class="sidebar-panel",
       tabsetPanel(id = "inspector", type = "tabs",
 tabPanel("Datos",
 p(if(private_mode) "Entorno privado: datos de usuario habilitados." else "Demo sintética: importación de usuario deshabilitada."),
@@ -74,6 +79,7 @@ p(if(private_mode) "Entorno privado: datos de usuario habilitados." else "Demo s
       selectInput("group", "Color / grupo", choices = c("Sin agrupación"=".none",stats::setNames(names(demo_data),names(demo_data))),selected="Compuesto")
 ),
 tabPanel("Gráfica",
+selectInput("figure_template","Plantilla",c("Editor universal"="universal","MTT editorial · 4 × 2"="mtt4x2")),
 selectInput("module", "Análisis", c("Editor universal"="universal","Citotoxicidad MTT"="mtt","Actividad farmacológica"="activity","Potencia y seguridad"="safety")),
 textInput("control_label_default", "Etiqueta del control", "No tratado"),
 selectInput("control_type_default", "Tipo predeterminado de control cero",
@@ -103,6 +109,28 @@ selectInput("kind", "Tipo de gráfica",
                               "Boxplot + puntos" = "box", "Barras: media ± SD" = "bar")),
 selectInput("preset", "Preset LDJ-FIG v2.0", c("Color accesible"="color", "Blanco y negro"="mono", "Presentación"="slides")),
 actionButton("apply_preset", "Aplicar preset"), helpText("Propuestas de estilo; pendientes de comparación con figuras de referencia.")
+),
+tabPanel("MTT 4×2",
+p("Las opciones gráficas no recalculan modelos ni comparaciones. La demo usa resultados calculados exclusivamente de datos sintéticos."),
+selectInput("mtt_source","Fuente MTT",if(private_mode) c("Demostración sintética"="synthetic","Bundle auditado privado (LDJ_MTT_ROOT)"="private") else c("Demostración sintética"="synthetic")),
+selectInput("mtt_target","Aplicar estilo a",c("Todos los paneles"="all",LETTERS[1:8])),
+textInput("mtt_title","Título del panel (vacío: automático)",""),
+textInput("mtt_x","Eje X (vacío: global)",""),
+textInput("mtt_y","Eje Y (vacío: global)",""),
+textInput("mtt_hex","Color HEX (vacío: paleta)",""),
+textInput("mtt_note","Anotación del panel",""),
+textInput("mtt_ylim","Límites Y: mínimo,máximo",""),
+textInput("mtt_xlim","Límites X de curva: mínimo,máximo",""),
+selectInput("mtt_dispersion","Dispersión del panel",c("Global"="global","SD","SEM","IC95")),
+textInput("mtt_size","Tamaño de símbolo (vacío: global)",""),
+textInput("mtt_font","Tamaño de fuente (vacío: global)",""),
+selectInput("mtt_shape","Símbolo del panel",c("Global"="global","Círculo"="21","Triángulo"="24","Cuadrado"="22","Diamante"="23")),
+selectInput("mtt_scale","Escala X de curva",c("Global"="global","Log10"="log10","Lineal"="linear")),
+selectInput("mtt_points","Réplicas del panel de barras",c("Global"="global","Mostrar"="show","Ocultar"="hide")),
+actionButton("mtt_apply","Aplicar estilo"),actionButton("mtt_reset","Restablecer estilos por panel"),
+sliderInput("preview_zoom","Zoom de vista previa",min=60,max=150,value=100,step=10),
+actionButton("print_figure","Modo impresión",onclick="window.print()"),
+verbatimTextOutput("mtt_audit")
 ),
 tabPanel("Ejes",
 textInput("plot_title", "Título", ""),
@@ -161,18 +189,20 @@ numericInput("width", "Ancho de exportación (pulgadas)", 7, min = 2, max = 20),
 downloadButton("config", "Configuración JSON")
 )
       ),
-      p("Prototipo visual: aún no estima IC50/CC50 ni realiza inferencia estadística.",
+      p("Las estimaciones dependen del modelo y de sus diagnósticos. MTT v4 visualiza resultados conservados sin reajustarlos.",
         class = "help-note", style = "margin-top: 12px;")
     ),
-    mainPanel(width = 8,
+    mainPanel(width = 9, class="main-panel",
       wellPanel(
-        plotOutput("plot", height = "520px"),
+        div(class="mtt-preview",uiOutput("plot_container")),
         uiOutput("status")
       ),
-      h4("Vista previa de datos"),
-      rHandsontableOutput("grid"),
-      h4("Resultados"), verbatimTextOutput("analysis_status"),
-      tableOutput("results"), tableOutput("anova"), tableOutput("diagnostics"), tableOutput("comparisons"),
+      tags$details(tags$summary("Mostrar / ocultar tabla de datos"),
+        conditionalPanel("input.figure_template != 'mtt4x2'",rHandsontableOutput("grid")),
+        conditionalPanel("input.figure_template == 'mtt4x2'",p("Primeras 60 observaciones MTT; el registro completo de controles se conserva en la sesión."),tableOutput("mtt_data"))),
+      conditionalPanel("input.figure_template != 'mtt4x2'",
+        h4("Resultados"), verbatimTextOutput("analysis_status"),
+        tableOutput("results"), tableOutput("anova"), tableOutput("diagnostics"), tableOutput("comparisons")),
       p("Piloto con datos sintéticos. Las opciones visuales no modifican la tabla original.",
         class = "help-note")
     )
@@ -180,6 +210,94 @@ downloadButton("config", "Configuración JSON")
 )
 
 server <- function(input, output, session) {
+  mtt_styles <- reactiveVal(list())
+  mtt_bundle <- reactive({
+    req(input$figure_template=="mtt4x2",input$mtt_source)
+    if(identical(input$mtt_source,"synthetic")) return(ldj_mtt_synthetic_bundle())
+    req(private_mode)
+    root <- Sys.getenv("LDJ_MTT_ROOT")
+    validate(need(nzchar(root),"Configure LDJ_MTT_ROOT en el entorno privado autorizado."))
+    validate(need(identical(Sys.getenv("LDJ_MTT_UNITS_VERIFIED"),"true"),
+      "Verifique primero unidades de entrada: la referencia LET está en nM y los campos v4 se llaman conc_uM. LDJ_MTT_UNITS_VERIFIED=true requiere un bundle convertido íntegramente a µM, incluidos modelos e IC."))
+    ldj_mtt_read_bundle(root)
+  })
+  observeEvent(input$mtt_apply,{
+    tryCatch({
+      cfg <- list()
+      for(pair in list(c("title","mtt_title"),c("x_label","mtt_x"),c("y_label","mtt_y"),c("color","mtt_hex"),c("annotation","mtt_note"))) {
+        v <- trimws(input[[pair[2]]]); if(nzchar(v)) cfg[[pair[1]]] <- v
+      }
+      if(!is.null(cfg$color) && !grepl("^#[[:xdigit:]]{6}$",cfg$color)) stop("Use un color HEX de seis dígitos.")
+      for(pair in list(c("x_limits","mtt_xlim"),c("y_limits","mtt_ylim"))) {
+        v <- trimws(input[[pair[2]]])
+        if(nzchar(v)) {
+          lim <- suppressWarnings(as.numeric(strsplit(v,",",fixed=TRUE)[[1]]))
+          if(length(lim)!=2 || any(!is.finite(lim)) || diff(lim)<=0) stop("Use límites mínimo,máximo válidos.")
+          if(pair[1]=="x_limits" && min(lim)<=0) stop("Las curvas requieren límites X positivos.")
+          cfg[[pair[1]]] <- lim
+        }
+      }
+      if(input$mtt_dispersion!="global") cfg$summary_measure <- input$mtt_dispersion
+      for(pair in list(c("point_size","mtt_size"),c("font_size","mtt_font"))) {
+        v <- trimws(input[[pair[2]]])
+        if(nzchar(v)) {
+          n <- suppressWarnings(as.numeric(v))
+          if(length(n)!=1 || !is.finite(n) || n<=0 || n>40) stop("Use un tamaño positivo hasta 40.")
+          cfg[[pair[1]]] <- n
+        }
+      }
+      if(input$mtt_shape!="global") cfg$point_shape <- as.integer(input$mtt_shape)
+      if(input$mtt_scale!="global") cfg$x_scale <- input$mtt_scale
+      if(input$mtt_points!="global") cfg$show_points <- input$mtt_points=="show"
+      styles <- mtt_styles()
+      targets <- if(input$mtt_target=="all") LETTERS[1:8] else input$mtt_target
+      for(tag in targets) styles[[tag]] <- cfg
+      mtt_styles(styles)
+    },error=function(e) showNotification(conditionMessage(e),type="error"))
+  })
+  observeEvent(input$mtt_reset,mtt_styles(list()))
+  observeEvent(input$figure_template,{
+    if(input$figure_template=="mtt4x2") {
+      updateNumericInput(session,"width",value=12)
+      updateNumericInput(session,"height",value=18)
+    }
+  })
+  mtt_result <- reactive({
+    req(input$figure_template=="mtt4x2",input$font_size,input$palette,input$dispersion)
+    b <- mtt_bundle(); pal <- ldj_mtt_defaults()$palette
+    colors <- palette_ldj(4,input$palette)
+    if(input$palette=="Personalizada") for(i in 1:4) {
+      v <- input[[paste0("custom_color_",i)]]
+      if(!is.null(v) && grepl("^#[[:xdigit:]]{6}$",v)) colors[i] <- v
+    }
+    pal[ldj_mtt_defaults()$order] <- colors
+    cfg <- list(palette=pal,figure_title=input$plot_title,x_label=input$x_label,y_label=input$y_label,
+      font_size=input$font_size,font_family=input$font_family,show_points=input$points,
+      point_shape=as.integer(input$point_shape),point_size=input$point_size,
+      summary_measure=input$dispersion,x_scale=input$x_scale,panels=mtt_styles(),
+      plot_width=input$width,plot_height=input$height,dpi=as.integer(input$dpi))
+    if(isTRUE(b$synthetic)) {
+      cfg$short <- stats::setNames(paste("Ejemplo",LETTERS[1:4]),ldj_mtt_defaults()$order)
+      cfg$label_significance <- FALSE
+      cfg$plot_caption <- paste("DEMO · datos sintéticos. Medias ±",input$dispersion,
+        "; bandas locales: dispersión observada, no IC del ajuste. Sin contrastes Dunnett inventados.",
+        "Seis controles físicos compartidos entre dos contextos gráficos.",input$caption)
+    }
+    ldj_mtt_editor_build(b,cfg)
+  })
+  output$mtt_audit <- renderPrint({
+    req(input$figure_template=="mtt4x2")
+    z <- mtt_result()$audit
+    print(list(synthetic=z$synthetic,physical_shared_controls=z$shared_physical_n,
+      visual_context_observations=z$shared_visual_n,inference=z$inference))
+  })
+  output$mtt_data <- renderTable({req(input$figure_template=="mtt4x2"); head(mtt_bundle()$orig,60)})
+  output$plot_container <- renderUI({
+    if(identical(input$figure_template,"mtt4x2")) {
+      zoom <- if(is.null(input$preview_zoom)) 1 else input$preview_zoom/100
+      plotOutput("plot",height=paste0(round(1500*zoom),"px"),width=paste0(round(1000*zoom),"px"))
+    } else plotOutput("plot",height="520px")
+  })
   source_data <- reactiveVal(demo_data)
   working <- reactiveVal(demo_data)
   dataset <- reactive(working())
@@ -329,7 +447,9 @@ server <- function(input, output, session) {
   output$custom_color_inputs <- renderUI({
     req(input$palette == "Personalizada", input$group)
     d <- dataset()
-    if (identical(input$group, ".none") || !(input$group %in% names(d))) {
+    if(identical(input$figure_template,"mtt4x2")) {
+      groups <- if(identical(input$mtt_source,"private")) ldj_mtt_defaults()$order else paste("Ejemplo",LETTERS[1:4])
+    } else if (identical(input$group, ".none") || !(input$group %in% names(d))) {
       groups <- "Datos"
     } else {
       groups <- levels(as.factor(d[[input$group]]))
@@ -367,7 +487,9 @@ server <- function(input, output, session) {
       values <- reactiveValuesToList(input)
       colors <- values[grepl("^custom_color_", names(values))]
       jsonlite::write_json(list(schema_version = 1, data = "synthetic",
-        settings = values[intersect(ids, names(values))], colors = colors, analysis=list(threshold_mode=input$threshold_mode,zero_policy=input$zero_policy,model=input$model,model_reason=input$model_reason,experiment=input$experiment_id,control_experiment=input$control_experiment,control_source=input$control_source)),
+        settings = values[intersect(ids, names(values))], colors = colors,
+        mtt=list(template=input$figure_template,source=input$mtt_source,panels=mtt_styles()),
+        analysis=list(threshold_mode=input$threshold_mode,zero_policy=input$zero_policy,model=input$model,model_reason=input$model_reason,experiment=input$experiment_id,control_experiment=input$control_experiment,control_source=input$control_source)),
         file, pretty = TRUE, auto_unbox = TRUE)
     }
   )
@@ -481,6 +603,7 @@ server <- function(input, output, session) {
     p
   })
   final_plot <- reactive({
+    if(identical(input$figure_template,"mtt4x2")) return(mtt_result()$figure)
     req(selection_ready())
     if(identical(input$module,"safety")) {
       z <- analysis()$table
@@ -514,6 +637,9 @@ server <- function(input, output, session) {
   output$plot <- renderPlot(final_plot(),res=110)
   output$preview <- renderTable(utils::head(dataset(), 8), rownames = FALSE)
   output$status <- renderUI({
+    if(identical(input$figure_template,"mtt4x2")) return(p(class="help-note",
+      paste("MTT · ocho paneles A–H ·",if(isTRUE(mtt_bundle()$synthetic)) "DEMO sintética" else "bundle privado",
+        "· los cambios de estilo conservan estimaciones y controles.")))
     p(class = "help-note",
       paste(nrow(dataset()), "filas ·", ncol(dataset()),
             "columnas · datos", if(private_mode) "de sesión privada" else "sintéticos"))
@@ -533,3 +659,4 @@ server <- function(input, output, session) {
                                 content = function(file) export_plot(file, "svg"))
 }
 shinyApp(ui, server)
+

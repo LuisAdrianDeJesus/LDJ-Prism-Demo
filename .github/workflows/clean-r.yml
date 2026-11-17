@@ -22,7 +22,7 @@ jobs:
         run: |
           stopifnot(as.character(getRversion()) == "4.6.0")
           options(repos=c(CRAN="https://packagemanager.posit.co/cran/__linux__/jammy/latest"))
-          install.packages(c("shiny","ggplot2","svglite","colourpicker",
+          install.packages(c("shiny","ggplot2","ggrepel","svglite","colourpicker",
             "rhandsontable","readxl","jsonlite","drc","multcomp","patchwork",
             "rsconnect","writexl","shinytest2","cpp11","progress","RcppEigen","RcppArmadillo"),
             Ncpus=2)
@@ -30,16 +30,18 @@ jobs:
         run: |
           Rscript tests/unit.R
           Rscript tests/smoke.R
+          Rscript tests/mtt-editorial.R
       - name: Chromium first-load and figure export tests
         run: Rscript tests/startup-browser.R
       - name: Regenerate manifest in installed environment
         shell: Rscript {0}
         run: |
           options(repos=c(CRAN="https://packagemanager.posit.co/cran/__linux__/jammy/latest"))
-          rsconnect::writeManifest(appDir=".",appFiles=c("app.R","R/analysis.R"))
+          files <- c("app.R","R/analysis.R","R/mtt_visualization_v4_LDJ_Prism.R","R/mtt_shiny.R")
+          rsconnect::writeManifest(appDir=".",appFiles=files)
           m <- jsonlite::read_json("manifest.json")
           stopifnot(m$platform=="4.6.0",
-            setequal(names(m$files),c("app.R","R/analysis.R")))
+            setequal(names(m$files),files))
           bad <- vapply(m$packages,function(p) identical(p$Source,"any"),logical(1))
           stopifnot(!any(bad))
           writeLines(capture.output(sessionInfo()),"R-session.txt")
@@ -49,8 +51,11 @@ jobs:
           path: |
             app.R
             R/analysis.R
+            R/mtt_visualization_v4_LDJ_Prism.R
+            R/mtt_shiny.R
             manifest.json
             R-session.txt
+            test-artifacts/
       - name: Commit verified dependency manifest
         run: |
           git config user.name "github-actions[bot]"
@@ -58,3 +63,4 @@ jobs:
           git add manifest.json
           git diff --cached --quiet || git commit -m "build: regenerate verified manifest with R 4.6.0"
           git push origin "HEAD:$GITHUB_REF_NAME"
+
