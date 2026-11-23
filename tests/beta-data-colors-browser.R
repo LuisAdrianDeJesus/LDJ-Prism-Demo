@@ -39,6 +39,22 @@ tryCatch({
     unlink(path)
     cat("Browser upload",ext,": PASS\n")
   }
+  app$upload_file(upload=local({
+    path <- tempfile(fileext=".csv")
+    write.csv(transform(fixture,alternative_dose=c(5,7),alternative_y=c(71,82),
+      alternative_group=c("QA-c","QA-d")),path,row.names=FALSE)
+    path
+  }))
+  app$wait_for_js("HTMLWidgets.find('#grid')?.hot?.getColHeader(5)==='alternative_group'",timeout=30000)
+  app$set_inputs(x="alternative_dose",y="alternative_y",group="alternative_group",x_scale="linear")
+  app$click("confirm_table")
+  app$click("run_analysis")
+  app$wait_for_js("Boolean(document.querySelector('#plot img')?.naturalWidth)",timeout=60000)
+  app$set_inputs(inspector="Exportar")
+  axes_svg <- tempfile(fileext=".svg")
+  app$get_download("svg",filename=axes_svg)
+  stopifnot(any(grepl("QA-d",readLines(axes_svg,warn=FALSE),fixed=TRUE)))
+  app$set_inputs(inspector="Datos")
   app$click("load_example")
   app$set_inputs(inspector="Colores",visual_preset="minimal",palette="Viridis · semitransparente")
   app$click("palette_apply")
