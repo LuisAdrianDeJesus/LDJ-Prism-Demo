@@ -65,9 +65,11 @@ ui <- fluidPage(
       h2("LDJ Prism", style = "margin-bottom: 3px;"),
       p("Laboratorio de Virología Molecular · Editor de figuras con R y ggplot2",
         class = "help-note")),
+  selectInput("module", "Módulo", c("Editor universal"="universal","Citotoxicidad MTT"="mtt",
+    "Actividad farmacológica"="activity","Potencia y seguridad"="safety")),
   sidebarLayout(
     sidebarPanel(width = 3, class="sidebar-panel",
-      tabsetPanel(id = "inspector", type = "tabs",
+      tabsetPanel(id = "inspector", type = "tabs", selected="Gráfica",
 tabPanel("Datos",
 p("Los datos enviados se procesan en la sesión del servidor. La demo pública no garantiza confidencialidad: utilice únicamente datos no confidenciales; reserve datos internos para alojamiento autenticado."),
 checkboxInput("has_header","El archivo incluye encabezados",TRUE),
@@ -87,9 +89,11 @@ p(if(private_mode) "Entorno privado configurado." else "Demo pública: utilice �
       selectInput("y", "Variable Y (numérica)", choices = names(demo_data)[vapply(demo_data,is.numeric,logical(1))], selected="Viabilidad_pct"),
       selectInput("group", "Color / grupo", choices = c("Sin agrupación"=".none",stats::setNames(names(demo_data),names(demo_data))),selected="Compuesto")
 ),
-tabPanel("Gráfica",
-selectInput("figure_template","Plantilla",c("Editor universal"="universal","MTT editorial · 4 × 2"="mtt4x2")),
-selectInput("module", "Análisis", c("Editor universal"="universal","Citotoxicidad MTT"="mtt","Actividad farmacológica"="activity","Potencia y seguridad"="safety")),
+tabPanel("Análisis",
+conditionalPanel("input.module === 'mtt'",
+  selectInput("mtt_view","Vista MTT",c("Editorial 4 × 2"="editorial","Vista general"="general"))),
+actionButton("run_analysis","Ejecutar análisis"),
+textOutput("workflow_status"),
 textInput("control_label_default", "Etiqueta del control", "No tratado"),
 selectInput("control_type_default", "Tipo predeterminado de control cero",
  c("No tratado"="untreated","Vehículo"="vehicle","Control negativo"="negative",
@@ -107,21 +111,27 @@ textInput("model_reason", "Justificación del modelo/restricciones", ""),
 checkboxInput("independent", "Confirmo réplicas independientes y control del mismo experimento", FALSE),
 numericInput("control", "Concentración del control", 0, min=0),
 selectInput("unit", "Unidad de concentración", c("uM","nM","mM","M")),
+conditionalPanel("input.module === 'safety'",
 selectInput("safety_display","Vista de potencia y seguridad",c("Resumen transversal"="summary","Editorial 4×2"="editorial")),
 conditionalPanel("input.module === 'safety' && input.safety_display === 'editorial'",
   selectInput("cc20_source","Fuente de CC20",c("Calculado por regresión"="regression",
     "Proporcionado en tabla"="table","Mostrar ambas estimaciones"="both"),selected="table"),
   numericInput("cc20_tolerance","Tolerancia (% del CC20 del ajuste)",10,min=0,step=1)),
 helpText("Editorial: combine en una tabla cuatro grupos, filas de parámetros con parameter/estimate/unit y filas de viabilidad con parameter vacío y columnas X/Y. X debe usar la unidad de concentración seleccionada."),
-selectInput("activity_control_type","Control inferencial de actividad",c("Infectado sin tratamiento"="infected_untreated","Células sanas sin tratamiento"="untreated","Vehículo"="vehicle","Negativo"="negative","Positivo"="positive")),
+
 checkboxInput("safety_table","Leer parámetros de la tabla (parameter, estimate, unit; lower/upper opcionales)",FALSE),
-checkboxInput("activity_editorial","Actividad: pares editoriales por serie (hasta 4)",TRUE),
+
 selectInput("safety_unit","Unidad de presentación de parámetros",c("nM","uM","mM","M"),selected="uM"),
 numericInput("ic50_value", "IC50 para integración", NA_real_, min=0),
 numericInput("cc20_value", "CC20 para integración", NA_real_, min=0),
 numericInput("cc50_value", "CC50 para integración", NA_real_, min=0),
 selectInput("ic_unit", "Unidad IC50", c("uM","nM","mM","M")),
-selectInput("cc_unit", "Unidad CC20/CC50", c("uM","nM","mM","M")),
+selectInput("cc_unit", "Unidad CC20/CC50", c("uM","nM","mM","M"))),
+conditionalPanel("input.module === 'activity'",
+selectInput("activity_control_type","Control inferencial de actividad",c("Infectado sin tratamiento"="infected_untreated","Células sanas sin tratamiento"="untreated","Vehículo"="vehicle","Negativo"="negative","Positivo"="positive")),
+checkboxInput("activity_editorial","Actividad: pares editoriales por serie (hasta 4)",TRUE)),
+),
+tabPanel("Gráfica",
 selectInput("kind", "Tipo de gráfica",
                   choices = c("Dispersión" = "scatter",
                               "Curva de medias" = "line",
@@ -217,14 +227,20 @@ downloadButton("config", "Configuración JSON")
         class = "help-note", style = "margin-top: 12px;")
     ),
     mainPanel(width = 9, class="main-panel",
-      wellPanel(
-        div(class="mtt-preview",uiOutput("plot_container")),
+      conditionalPanel("input.inspector === 'Datos'",
+        wellPanel(h3("1. Datos"),selectInput("entry_type","Tipo de entrada",
+          c("Observaciones individuales"="observations","Parámetros resumidos"="parameters")),
+          actionButton("blank_table","Nueva tabla en blanco"),
+          actionButton("load_example","Cargar ejemplo"),
+          helpText("Edite celdas, pegue rangos o use el menú contextual para eliminar filas y columnas."),
+          rHandsontableOutput("grid"),textOutput("table_state"),
+          actionButton("confirm_table","Confirmar tabla y pasar a Análisis"))),
+      conditionalPanel("input.inspector !== 'Datos' && input.inspector !== 'Análisis'",wellPanel(
+        h3("3. Figura"), div(class="mtt-preview",uiOutput("plot_container")),
         uiOutput("status")
-      ),
-      tags$details(tags$summary("Mostrar / ocultar tabla de datos"),
-        rHandsontableOutput("grid"),
-        conditionalPanel("input.figure_template == 'mtt4x2'",p("Primeras 60 observaciones MTT; el registro completo de controles se conserva en la sesión."),tableOutput("mtt_data"))),
-      conditionalPanel("input.figure_template != 'mtt4x2'",
+      )),
+      conditionalPanel("input.inspector === 'Análisis'",
+        h3("2. Análisis"),
         h4("Resultados"), verbatimTextOutput("analysis_status"),
         tableOutput("results"), conditionalPanel("input.module == 'activity'",verbatimTextOutput("activity_audit")), tableOutput("anova"), tableOutput("diagnostics"), tableOutput("comparisons")),
       p("Piloto con datos sintéticos. Las opciones visuales no modifican la tabla original.",
@@ -234,8 +250,18 @@ downloadButton("config", "Configuración JSON")
 )
 
 server <- function(input, output, session) {
+  figure_template <- reactive(if (identical(input$module,"mtt") &&
+    !identical(input$mtt_view,"general")) "mtt4x2" else "universal")
+  manual <- reactiveVal(FALSE)
+  manual_snapshot <- reactiveVal(NULL)
+  run_signature <- reactive(serialize(list(analysis_signature(),input$module,
+    input$activity_control_type,input$safety_table,input$safety_display,input$decimal,
+    input$ic50_value,input$cc20_value,input$cc50_value,input$ic_unit,input$cc_unit),NULL))
+  analysis_ready <- reactive({
+    req(!manual() || identical(manual_snapshot(), run_signature()))
+  })
   color_series <- reactive({
-    if(identical(input$figure_template,"mtt4x2") && !isTRUE(input$mtt_user_data))
+    if(identical(figure_template(),"mtt4x2") && !isTRUE(input$mtt_user_data))
       return(ldj_mtt_defaults()$order)
     if(is.null(input$group)||input$group==".none"||!input$group%in%names(dataset())) return("Datos")
     z <- as.character(dataset()[[input$group]]);sort(unique(z[!is.na(z)&nzchar(z)]))
@@ -260,13 +286,12 @@ server <- function(input, output, session) {
       updateSelectInput(session,paste0("mtt_series_",i),choices=c("Seleccionar"="",values),selected=selected)
     }
   })
-  observeEvent(input$mtt_run, {
+  run_mtt <- function(incoming=dataset()) {
     tryCatch({
       req(selection_ready(),input$group!=".none")
       if (!identical(input$threshold_mode,"absolute"))
         stop("Esta plantilla sólo admite ajustes absolutos; el análisis relativo al control no está validado.")
       series <- vapply(1:4,function(i) input[[paste0("mtt_series_",i)]],character(1))
-      incoming <- if(!is.null(input$grid)) rhandsontable::hot_to_r(input$grid) else dataset()
       incoming <- ldj_mtt_normalize_numeric(incoming,
         if(is.null(input$decimal)) "." else input$decimal)
       if(!identical(incoming,dataset())) {
@@ -278,7 +303,8 @@ server <- function(input, output, session) {
       table_result(result)
       table_snapshot(analysis_signature())
     },error=function(e) showNotification(conditionMessage(e),type="error",duration=NULL))
-  })
+  }
+  observeEvent(input$mtt_run,run_mtt())
   output$mtt_run_status <- renderText({
     if(is.null(table_result())) "Seleccione columnas, unidad y series; ejecute el análisis."
     else if(!identical(table_snapshot(),analysis_signature())) "Datos o configuración modificados: vuelva a ejecutar el análisis antes de exportar."
@@ -286,7 +312,7 @@ server <- function(input, output, session) {
   })
   mtt_styles <- reactiveVal(list())
   mtt_bundle <- reactive({
-    req(input$figure_template=="mtt4x2",input$mtt_source)
+    req(figure_template()=="mtt4x2",input$mtt_source)
     if(identical(input$mtt_source,"synthetic")) return(ldj_mtt_synthetic_bundle())
     req(private_mode)
     root <- Sys.getenv("LDJ_MTT_ROOT")
@@ -335,14 +361,14 @@ server <- function(input, output, session) {
     for(tag in names(styles)) styles[[tag]]$color <- NULL
     mtt_styles(styles)
   },ignoreInit=TRUE)
-  observeEvent(input$figure_template,{
-    if(input$figure_template=="mtt4x2") {
+  observeEvent(figure_template(),{
+    if(figure_template()=="mtt4x2") {
       updateNumericInput(session,"width",value=12)
       updateNumericInput(session,"height",value=18)
     }
   })
   observeEvent(list(input$module,input$activity_editorial,input$safety_display),{
-    if(!identical(input$figure_template,"universal")) return()
+    if(!identical(figure_template(),"universal")) return()
     if(identical(input$module,"activity") && isTRUE(input$activity_editorial)) {
       updateNumericInput(session,"width",value=12)
       updateNumericInput(session,"height",value=max(5,4.5*min(4,length(color_series()))))
@@ -357,7 +383,7 @@ server <- function(input, output, session) {
     }
   },ignoreInit=TRUE)
   mtt_result <- reactive({
-    req(input$figure_template=="mtt4x2",input$font_size,input$palette,input$dispersion)
+    req(figure_template()=="mtt4x2",input$font_size,input$palette,input$dispersion)
     b <- if(isTRUE(input$mtt_user_data)) list(synthetic=FALSE) else mtt_bundle(); pal <- ldj_mtt_defaults()$palette
     color_keys <- if(isTRUE(input$mtt_user_data)) vapply(1:4,function(i) input[[paste0("mtt_series_",i)]] %||% "",character(1)) else ldj_mtt_defaults()$order
     colors <- unname(ldj_series_colors(appearance(),color_keys)[color_keys])
@@ -389,16 +415,16 @@ server <- function(input, output, session) {
     ldj_mtt_editor_build(b,cfg)
   })
   output$mtt_audit <- renderPrint({
-    req(input$figure_template=="mtt4x2")
+    req(figure_template()=="mtt4x2")
     z <- mtt_result()$audit
     print(list(synthetic=z$synthetic,physical_shared_controls=z$shared_physical_n,
       visual_context_observations=z$shared_visual_n,inference=z$inference))
   })
-  output$mtt_data <- renderTable({req(input$figure_template=="mtt4x2");
+  output$mtt_data <- renderTable({req(figure_template()=="mtt4x2");
     if(isTRUE(input$mtt_user_data)) {req(table_result()); return(head(do.call(rbind,lapply(table_result()$rows,`[[`,"data")),60))}
     head(mtt_bundle()$orig,60)})
   output$plot_container <- renderUI({
-    if(identical(input$figure_template,"mtt4x2")) {
+    if(identical(figure_template(),"mtt4x2")) {
       zoom <- if(is.null(input$preview_zoom)) 1 else input$preview_zoom/100
       plotOutput("plot",height=paste0(round(1500*zoom),"px"),width=paste0(round(1000*zoom),"px"))
     } else if(identical(input$module,"safety") && identical(input$safety_display,"editorial")) {
@@ -411,6 +437,63 @@ server <- function(input, output, session) {
   source_data <- reactiveVal(demo_data)
   working <- reactiveVal(demo_data)
   dataset <- reactive(working())
+  grid_data <- function() {
+    if(is.null(input$grid)) working() else hot_to_r(input$grid)
+  }
+  observeEvent(input$blank_table, {
+    d <- if(identical(input$entry_type,"parameters"))
+      data.frame(group="",parameter="",estimate="",lower="",upper="",unit="")
+    else data.frame(concentration="",response="",group="",replicate="",control_type="",
+      observation_id="",experiment_id="",control_source="",inference_eligible="")
+    source_data(d)
+    working(d)
+    manual(TRUE)
+    manual_snapshot(NULL)
+    updateCheckboxInput(session,"safety_table",value=identical(input$entry_type,"parameters"))
+    updateCheckboxInput(session,"mtt_user_data",value=TRUE)
+    if(identical(input$entry_type,"parameters")) {
+      updateSelectInput(session,"module",selected="safety")
+      updateSelectInput(session,"safety_display",selected="summary")
+    }
+  })
+  observeEvent(input$load_example, {
+    source_data(demo_data)
+    working(demo_data)
+    manual(FALSE)
+    updateCheckboxInput(session,"mtt_user_data",value=FALSE)
+    updateCheckboxInput(session,"safety_table",value=FALSE)
+  })
+  confirm_grid <- function() {
+    d <- ldj_mtt_normalize_numeric(grid_data(),input$decimal %||% ".")
+    if(!nrow(d) || !ncol(d) || !any(vapply(d,function(x)
+      any(!is.na(x) & nzchar(trimws(as.character(x)))),logical(1))))
+      stop("Introduzca al menos un valor antes de confirmar.")
+    working(d)
+  }
+  observeEvent(input$confirm_table, {
+    tryCatch({
+      confirm_grid()
+      updateTabsetPanel(session,"inspector",selected="Análisis")
+    },error=function(e) showNotification(conditionMessage(e),type="error"))
+  })
+  observeEvent(input$run_analysis, {
+    if(identical(figure_template(),"mtt4x2") && isTRUE(input$mtt_user_data)) {
+      run_mtt()
+      if(!identical(table_snapshot(),analysis_signature())) return()
+    }
+    manual_snapshot(run_signature())
+    tryCatch({
+      if(identical(figure_template(),"universal") && !identical(input$module,"universal")) analysis()
+      updateTabsetPanel(session,"inspector",selected="Gráfica")
+    },error=function(e) {
+      manual_snapshot(NULL)
+      showNotification(conditionMessage(e),type="error")
+    })
+  })
+  output$table_state <- renderText(if(manual()) "Tabla manual. Confirme los cambios antes de analizar." else
+    "Tabla de sesión. Puede editarla o crear una tabla independiente.")
+  output$workflow_status <- renderText(if(manual() && !identical(manual_snapshot(),run_signature()))
+    "Datos o ajustes pendientes de analizar." else "La figura usa los datos confirmados.")
   output$import_controls <- renderUI({
     tagList(fileInput("upload", "Importar CSV/TSV/XLS/XLSX no confidencial", accept=c(".csv",".tsv",".xls",".xlsx")),
       selectInput("separator", "Separador CSV", c("Coma"=",","Punto y coma"=";","Tabulación"="\\t")))
@@ -484,14 +567,14 @@ server <- function(input, output, session) {
   })
   observeEvent(input$apply_grid, {
     req(input$grid)
-    working(hot_to_r(input$grid))
+    tryCatch(confirm_grid(),error=function(e) showNotification(conditionMessage(e),type="error"))
   })
   observeEvent(input$reset_grid, working(source_data()))
-  observeEvent(input$add_row, {d <- working(); d[nrow(d)+1L,] <- NA; working(d)})
-  observeEvent(input$add_column, {d <- working(); d[[make.unique(c(names(d),"Variable"))[ncol(d)+1L]]] <- NA_real_; working(d)})
+  observeEvent(input$add_row, {d <- grid_data(); d[nrow(d)+1L,] <- NA; working(d)})
+  observeEvent(input$add_column, {d <- grid_data(); d[[make.unique(c(names(d),"Variable"))[ncol(d)+1L]]] <- NA_real_; working(d)})
   observeEvent(input$rename_columns, {
     n <- trimws(strsplit(input$column_names,",",fixed=TRUE)[[1]])
-    d <- working()
+    d <- grid_data()
     if(length(n)!=ncol(d) || any(!nzchar(n)) || anyDuplicated(n)) {
       showNotification("Indique un nombre único no vacío por columna.",type="error")
     } else {names(d) <- n; working(d)}
@@ -541,6 +624,7 @@ server <- function(input, output, session) {
   })
 
   analysis <- reactive({
+    analysis_ready()
     if(is.null(input$module) || input$module=="universal") return(NULL)
     if(input$module=="safety") {
       d <- if(isTRUE(input$safety_table)) dataset() else data.frame(
@@ -614,20 +698,20 @@ server <- function(input, output, session) {
       if(!is.null(current) && current%in%choices) current else
         if(preferred%in%choices) preferred else if(length(choices)) choices[1] else ""
     }
-    proposed <- list(x=choose(isolate(input$x),cols,"Concentracion_uM"),
-      y=choose(isolate(input$y),numeric_cols,"Viabilidad_pct"),
-      group=choose(isolate(input$group),c(".none",cols),"Compuesto"))
+    proposed <- list(x=choose(isolate(input$x),cols,if("concentration"%in%cols) "concentration" else "Concentracion_uM"),
+      y=choose(isolate(input$y),numeric_cols,if("response"%in%numeric_cols) "response" else "Viabilidad_pct"),
+      group=choose(isolate(input$group),c(".none",cols),if("group"%in%cols) "group" else "Compuesto"))
     pending_selection(proposed)
     updateSelectInput(session,"x",choices=cols,selected=proposed$x)
     updateSelectInput(session,"y",choices=numeric_cols,selected=proposed$y)
     updateSelectInput(session,"group",choices=c("Sin agrupación"=".none",stats::setNames(cols,cols)),selected=proposed$group)
-    if(!length(numeric_cols)) showNotification("La tabla no contiene columnas numéricas para Y.",type="error")
+    if(!length(numeric_cols) && !manual()) showNotification("La tabla no contiene columnas numéricas para Y.",type="error")
   },priority=100)
 
   output$custom_color_inputs <- renderUI({
     req(input$palette == "Personalizada", input$group)
     d <- dataset()
-    if(identical(input$figure_template,"mtt4x2")) {
+    if(identical(figure_template(),"mtt4x2")) {
       groups <- if(identical(input$mtt_source,"private")) ldj_mtt_defaults()$order else paste("Ejemplo",LETTERS[1:4])
     } else if (identical(input$group, ".none") || !(input$group %in% names(d))) {
       groups <- "Datos"
@@ -668,7 +752,7 @@ server <- function(input, output, session) {
       colors <- values[grepl("^custom_color_", names(values))]
       jsonlite::write_json(list(schema_version = 1, data = "synthetic",
         settings = values[intersect(ids, names(values))], colors = colors,appearance=appearance(),
-        mtt=list(template=input$figure_template,source=input$mtt_source,panels=mtt_styles()),
+        mtt=list(template=figure_template(),source=input$mtt_source,panels=mtt_styles()),
         analysis=list(threshold_mode=input$threshold_mode,zero_policy=input$zero_policy,model=input$model,model_reason=input$model_reason,experiment=input$experiment_id,control_experiment=input$control_experiment,control_source=input$control_source)),
         file, pretty = TRUE, auto_unbox = TRUE)
     }
@@ -822,7 +906,8 @@ server <- function(input, output, session) {
     ldj_safety_editorial(analysis()$table,d,input$x,input$y,input$group,input$unit,"M",input$model, NULL)
   })
   final_plot <- reactive({
-    if(identical(input$figure_template,"mtt4x2")) return(mtt_result()$figure)
+    analysis_ready()
+    if(identical(figure_template(),"mtt4x2")) return(mtt_result()$figure)
     if(identical(input$module,"safety") && identical(input$safety_display,"editorial"))
       return(ldj_safety_editorial_plot(safety_editorial_result(),appearance(),input$safety_unit,input$dispersion,
         input$plot_title,y_label=input$y_label,cc20_source=input$cc20_source %||% "table",
@@ -887,7 +972,7 @@ server <- function(input, output, session) {
   output$plot <- renderPlot(final_plot(),res=110)
   output$preview <- renderTable(utils::head(dataset(), 8), rownames = FALSE)
   output$status <- renderUI({
-    if(identical(input$figure_template,"mtt4x2")) return(p(class="help-note",
+    if(identical(figure_template(),"mtt4x2")) return(p(class="help-note",
       paste("MTT · ocho paneles A–H ·",if(isTRUE(mtt_bundle()$synthetic)) "DEMO sintética" else "bundle privado",
         "· los cambios de estilo conservan estimaciones y controles.")))
     p(class = "help-note",
@@ -895,7 +980,7 @@ server <- function(input, output, session) {
             "columnas · datos", if(private_mode) "de sesión privada" else "sintéticos"))
   })
   export_plot <- function(file, format) {
-    if(identical(input$figure_template,"mtt4x2")) {
+    if(identical(figure_template(),"mtt4x2")) {
       # Shiny temporary download paths may not carry a file extension.
       target <- tempfile(fileext=paste0(".",format))
       on.exit(unlink(target),add=TRUE)
@@ -917,5 +1002,3 @@ server <- function(input, output, session) {
                                 content = function(file) export_plot(file, "svg"))
 }
 shinyApp(ui, server)
-
-

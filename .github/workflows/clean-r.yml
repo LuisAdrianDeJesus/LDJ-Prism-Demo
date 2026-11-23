@@ -1,14 +1,14 @@
 name: Clean Linux R 4.6.0 deployment
 on:
   push:
-    branches: [demo]
+    branches: [demo, 'fix/module-navigation-manual-data']
     paths: ['manifest.json', 'app.R', 'R/**', 'tests/**', '.github/workflows/clean-r.yml']
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   verify:
-    if: github.ref == 'refs/heads/demo'
+    if: github.ref == 'refs/heads/demo' || github.ref == 'refs/heads/fix/module-navigation-manual-data'
     runs-on: ubuntu-22.04
     env:
       RENV_CONFIG_CACHE_ENABLED: 'FALSE'
