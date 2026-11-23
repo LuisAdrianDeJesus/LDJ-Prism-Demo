@@ -62,11 +62,12 @@ tryCatch({
   app$click("palette_apply")
   app$set_inputs(color_scope="panel")
   app$set_inputs(color_target="A",color_element="curve",element_hex="#963C7F")
-  app$set_inputs(color_apply=1)
+  app$run_js("document.getElementById('element_hex').value='#963C7F'; document.getElementById('color_apply').click()")
+  app$wait_for_idle()
   app$set_inputs(color_scope="series")
   app$set_inputs(color_target="Ejemplo A",color_element="series",element_hex="#123ABC")
-  # Direct Shiny action input preserves the test's explicit colour value.
-  app$set_inputs(color_apply=2)
+  app$run_js("document.getElementById('element_hex').value='#123ABC'; document.getElementById('color_apply').click()")
+  app$wait_for_idle()
   app$get_download("colors_json",filename=style_path)
   original <- jsonlite::read_json(style_path)
   stopifnot(original$preset=="minimal",original$palette=="Viridis · semitransparente",
