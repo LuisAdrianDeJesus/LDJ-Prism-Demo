@@ -55,6 +55,18 @@ ldj_mtt_analyze_table <- function(data, x, y, group, series, unit,
   # interpretation and requires a new analysis; display unit never does.
   sources <- if ("concentration_unit" %in% names(data)) as.character(data$concentration_unit) else unit
   if (length(sources) > 1L) sources[is.na(sources) | !nzchar(sources)] <- unit
+  replica_columns <- intersect(c("replicate", "Replica"), names(data))
+  if (!length(replica_columns)) stop("Incluya replicate o Replica con identificadores de réplica.")
+  if (length(replica_columns) == 2L) {
+    a <- trimws(as.character(data$replicate))
+    b <- trimws(as.character(data$Replica))
+    has_a <- !is.na(a) & nzchar(a)
+    has_b <- !is.na(b) & nzchar(b)
+    if (any(has_a & has_b & a != b)) stop("Las columnas replicate y Replica contienen identificadores distintos.")
+    data$replicate <- ifelse(has_a, a, b)
+  } else {
+    data$replicate <- data[[replica_columns]]
+  }
   canonical <- data
   canonical[[x]] <- ldj_convert_concentration(canonical[[x]], sources, "uM")
   # Limit the analysis to the four chosen series. A separately recorded control
@@ -82,8 +94,7 @@ ldj_mtt_analyze_table <- function(data, x, y, group, series, unit,
     if (any(!is.finite(d[[y]]))) stop("Resuelva respuestas faltantes o no finitas en ", s)
     if (any(!d$.is_control & (!is.finite(d[[x]]) | d[[x]] <= 0)))
       stop("Los tratamientos requieren concentraciones positivas: ", s)
-    if (!"Replica" %in% names(d)) stop("Incluya Replica con identificadores de réplica.")
-    if (anyNA(d$Replica) || any(!nzchar(trimws(as.character(d$Replica)))))
+    if (anyNA(d$replicate) || any(!nzchar(trimws(as.character(d$replicate)))))
       stop("Faltan identificadores de réplica: ", s)
     treatment <- d[!d$.is_control, , drop=FALSE]
     if (nrow(treatment) < 8L || length(unique(treatment[[x]])) < 5L)
@@ -342,4 +353,3 @@ ldj_mtt_editor_export <- function(result,filename,width=result$config$plot_width
     width=width,height=height,units="in",bg="white",limitsize=FALSE)
   invisible(normalizePath(filename,mustWork=TRUE))
 }
-

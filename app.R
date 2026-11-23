@@ -281,14 +281,14 @@ server <- function(input, output, session) {
     source=input$control_source,independent=input$independent),NULL))
   observeEvent(list(dataset(),input$group), {
     req(input$group,input$group%in%names(dataset()))
-    values <- unique(as.character(dataset()[[input$group]])); values <- values[!is.na(values)&nzchar(values)]
+    values <- unique(as.character(observations()[[input$group]])); values <- values[!is.na(values)&nzchar(values)]
     for(i in 1:4) {
       old <- isolate(input[[paste0("mtt_series_",i)]])
       selected <- if(!is.null(old)&&old%in%values) old else if(length(values)>=i) values[i] else ""
       updateSelectInput(session,paste0("mtt_series_",i),choices=c("Seleccionar"="",values),selected=selected)
     }
   })
-  run_mtt <- function(incoming=dataset()) {
+  run_mtt <- function(incoming=observations()) {
     tryCatch({
       req(selection_ready(),input$group!=".none")
       if (!identical(input$threshold_mode,"absolute"))
@@ -296,10 +296,6 @@ server <- function(input, output, session) {
       series <- vapply(1:4,function(i) input[[paste0("mtt_series_",i)]],character(1))
       incoming <- ldj_mtt_normalize_numeric(incoming,
         if(is.null(input$decimal)) "." else input$decimal)
-      if(!identical(incoming,dataset())) {
-        working(incoming)
-        mtt_control_map(ldj_mtt_default_control_map(incoming,input$x,input$y,input$group))
-      }
       result <- ldj_mtt_analyze_table(incoming,input$x,input$y,input$group,
         series,input$unit,input$model,control_assignments=mtt_control_map())
       table_result(result)
@@ -439,6 +435,12 @@ server <- function(input, output, session) {
   source_data <- reactiveVal(demo_data)
   working <- reactiveVal(demo_data)
   dataset <- reactive(working())
+  observations <- reactive({
+    d <- dataset()
+    if ("parameter" %in% names(d))
+      d <- d[is.na(d$parameter) | !nzchar(trimws(d$parameter)), , drop=FALSE]
+    d
+  })
   grid_data <- function() {
     if(is.null(input$grid)) working() else hot_to_r(input$grid)
   }
@@ -463,6 +465,16 @@ server <- function(input, output, session) {
     source_data(demo_data)
     working(demo_data)
     manual(FALSE)
+    draft_pending(FALSE)
+    manual_snapshot(NULL)
+    table_result(NULL)
+    table_snapshot(NULL)
+    updateSelectInput(session,"entry_type",selected="observations")
+    updateSelectInput(session,"x",selected="Concentracion_uM")
+    updateSelectInput(session,"y",selected="Viabilidad_pct")
+    updateSelectInput(session,"group",selected="Compuesto")
+    updateSelectInput(session,"unit",selected="uM")
+    updateSelectInput(session,"mtt_source",selected="synthetic")
     updateCheckboxInput(session,"mtt_user_data",value=FALSE)
     updateCheckboxInput(session,"safety_table",value=FALSE)
   })
@@ -473,7 +485,7 @@ server <- function(input, output, session) {
       stop("Introduzca al menos un valor antes de confirmar.")
     populated <- Reduce(`|`,lapply(d,function(x) !is.na(x) & nzchar(trimws(as.character(x)))))
     d <- d[populated,,drop=FALSE]
-    if("control_type"%in%names(d) && !"parameter"%in%names(d)) {
+    if("control_type"%in%names(d)) {
       missing_type <- is.na(d$control_type) | !nzchar(trimws(d$control_type))
       dose_col <- if("concentration"%in%names(d)) "concentration" else input$x
       dose <- if(length(dose_col) && dose_col%in%names(d)) d[[dose_col]] else rep(NA_real_,nrow(d))
@@ -571,7 +583,7 @@ server <- function(input, output, session) {
   observeEvent(list(dataset(),input$x,input$y,input$group), {
     req(input$x,input$y,input$group,input$group %in% names(dataset()))
     tryCatch({
-      mtt_control_map(ldj_mtt_default_control_map(dataset(),input$x,input$y,input$group))
+      mtt_control_map(ldj_mtt_default_control_map(observations(),input$x,input$y,input$group))
     }, error=function(e) {
       mtt_control_map(NULL)
       showNotification(paste("Registro de controles:",conditionMessage(e)),type="warning")
@@ -637,7 +649,7 @@ server <- function(input, output, session) {
   },priority=90)
   physical_data <- reactive({
     req(selection_ready())
-    prepare_controls(dataset(),input$x,input$y,
+    prepare_controls(observations(),input$x,input$y,
       if(is.null(input$control_label_default)) "No tratado" else input$control_label_default,
       if(is.null(input$control_type_default)) "untreated" else input$control_type_default,
       if(identical(input$group,".none")) NULL else input$group)
@@ -1019,6 +1031,7 @@ server <- function(input, output, session) {
             "columnas · datos", if(private_mode) "de sesión privada" else "sintéticos"))
   })
   export_plot <- function(file, format) {
+    analysis_ready()
     if(identical(figure_template(),"mtt4x2")) {
       # Shiny temporary download paths may not carry a file extension.
       target <- tempfile(fileext=paste0(".",format))
