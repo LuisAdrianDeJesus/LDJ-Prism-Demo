@@ -56,9 +56,12 @@ jobs:
           renv::restore(project=getwd(), lockfile=lock, library=library, clean=TRUE,
             prompt=FALSE)
           check_versions <- function() {
-            actual <- installed.packages(lib.loc=library)[, "Version"]
+            actual <- installed.packages(lib.loc=c(library, .Library))[, "Version"]
             expected <- vapply(records, function(p) p$Version, character(1))
-            stopifnot(identical(unname(actual[names(expected)]), unname(expected)))
+            resolved <- unname(actual[names(expected)])
+            wrong <- is.na(resolved) | resolved != unname(expected)
+            if (any(wrong)) stop("Package versions differ: ", paste(
+              names(expected)[wrong], resolved[wrong], "expected", expected[wrong], collapse="; "))
             cat(paste(names(expected), expected), sep="\n")
           }
           check_versions()
