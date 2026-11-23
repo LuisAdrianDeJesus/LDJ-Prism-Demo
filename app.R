@@ -471,6 +471,15 @@ server <- function(input, output, session) {
     if(!nrow(d) || !ncol(d) || !any(vapply(d,function(x)
       any(!is.na(x) & nzchar(trimws(as.character(x)))),logical(1))))
       stop("Introduzca al menos un valor antes de confirmar.")
+    populated <- Reduce(`|`,lapply(d,function(x) !is.na(x) & nzchar(trimws(as.character(x)))))
+    d <- d[populated,,drop=FALSE]
+    if("control_type"%in%names(d) && !"parameter"%in%names(d)) {
+      missing_type <- is.na(d$control_type) | !nzchar(trimws(d$control_type))
+      dose_col <- if("concentration"%in%names(d)) "concentration" else input$x
+      dose <- if(length(dose_col) && dose_col%in%names(d)) d[[dose_col]] else rep(NA_real_,nrow(d))
+      default_type <- ifelse(!is.na(dose) & dose==0,input$control_type_default %||% "untreated","treatment")
+      d$control_type[missing_type] <- default_type[missing_type]
+    }
     if("parameter"%in%names(d)) {
       rows <- !is.na(d$parameter) & nzchar(trimws(d$parameter))
       if(!any(rows)) stop("Indique un parámetro IC50, CC20 o CC50.")

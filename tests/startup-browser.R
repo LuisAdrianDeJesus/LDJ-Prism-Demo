@@ -49,6 +49,8 @@ tryCatch({
   app$wait_for_idle()
   app$click("run_analysis")
   app$wait_for_js("Boolean(document.querySelector('#plot img')?.naturalWidth)",timeout=60000)
+  param <- tempfile(fileext=".svg"); app$get_download("svg",filename=param)
+  stopifnot(any(grepl("IC50",readLines(param,warn=FALSE),fixed=TRUE))); unlink(param)
   dir.create("test-artifacts",showWarnings=FALSE)
   app$set_inputs(inspector="Datos",entry_type="observations")
   app$click("blank_table")
