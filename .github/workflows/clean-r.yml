@@ -1,31 +1,72 @@
 name: Clean Linux R 4.6.0 deployment
 on:
   push:
-    branches: [main, demo]
-    paths: ['app.R', 'R/**', 'tests/**', '.github/workflows/clean-r.yml']
+    branches: [demo]
+    paths: ['manifest.json', 'app.R', 'R/**', 'tests/**', '.github/workflows/clean-r.yml']
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 jobs:
   verify:
+    if: github.ref == 'refs/heads/demo'
     runs-on: ubuntu-22.04
+    env:
+      RENV_CONFIG_CACHE_ENABLED: 'FALSE'
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
       - uses: r-lib/actions/setup-r@v2
         with:
           r-version: '4.6.0'
           use-public-rspm: true
-      - name: Install application and test dependencies
+      - name: Restore and verify the committed manifest
         shell: Rscript {0}
         run: |
-          stopifnot(as.character(getRversion()) == "4.6.0")
-          options(repos=c(CRAN="https://packagemanager.posit.co/cran/__linux__/jammy/latest"))
-          install.packages(c("shiny","ggplot2","ggrepel","svglite","colourpicker",
-            "rhandsontable","readxl","jsonlite","drc","multcomp","patchwork",
-            "rsconnect","writexl","shinytest2","cpp11","progress","RcppEigen","RcppArmadillo"),
-            Ncpus=2)
+          install.packages(c("renv", "jsonlite"))
+          m <- jsonlite::read_json("manifest.json")
+          files <- c("app.R", file.path("R", c("analysis.R", "appearance.R",
+            "mtt_data_entry.R", "mtt_shiny.R", "mtt_visualization_v4_LDJ_Prism.R",
+            "pharmacology.R")))
+          stopifnot(m$platform == "4.6.0", as.character(getRversion()) == m$platform,
+            length(m$files) == length(files), setequal(names(m$files), files),
+            all(file.exists(files)))
+          expected <- vapply(m$files[files], function(f) f$checksum, character(1))
+          stopifnot(identical(unname(tools::md5sum(files)), unname(expected)))
+          packages <- m$packages
+          valid <- vapply(names(packages), function(name) {
+            p <- packages[[name]]
+            isTRUE(p$Source %in% c("CRAN", "RSPM")) &&
+              isTRUE(grepl("^https://[^/[:space:]]+(/[^[:space:]]*)?$", p$Repository)) &&
+              identical(p$description$Package, name) &&
+              isTRUE(nzchar(p$description$Version)) &&
+              !identical(p$description$RemoteType, "any")
+          }, logical(1))
+          if (any(!valid)) stop("Unresolvable manifest metadata: ", paste(names(valid)[!valid], collapse=", "))
+          urls <- unique(vapply(packages, function(p) p$Repository, character(1)))
+          repos <- setNames(urls, paste0("Repo", seq_along(urls)))
+          names(repos)[1] <- "CRAN"
+          records <- lapply(packages, function(p) list(
+            Package=p$description$Package, Version=p$description$Version,
+            Source="Repository", Repository=names(repos)[match(p$Repository, repos)]))
+          lock <- tempfile(fileext=".lock")
+          jsonlite::write_json(list(R=list(Version=m$platform, Repositories=unname(
+            Map(function(name,url) list(Name=name,URL=url), names(repos), repos))),
+            Packages=records), lock, auto_unbox=TRUE)
+          library <- file.path(Sys.getenv("RUNNER_TEMP"), "ldj-library")
+          dir.create(library)
+          renv::restore(project=getwd(), lockfile=lock, library=library, clean=TRUE,
+            prompt=FALSE)
+          check_versions <- function() {
+            actual <- installed.packages(lib.loc=library)[, "Version"]
+            expected <- vapply(records, function(p) p$Version, character(1))
+            stopifnot(identical(unname(actual[names(expected)]), unname(expected)))
+            cat(paste(names(expected), expected), sep="\n")
+          }
+          check_versions()
+          .libPaths(c(library, .libPaths()))
+          install.packages(c("writexl", "shinytest2"), lib=library)
+          check_versions()
+          cat(paste0("R_LIBS_USER=", library, "\n"), file=Sys.getenv("GITHUB_ENV"), append=TRUE)
+          writeLines(capture.output(sessionInfo()), "R-session.txt")
       - name: Synthetic regression and Shiny tests
         run: |
           Rscript tests/unit.R
@@ -33,34 +74,12 @@ jobs:
           Rscript tests/mtt-editorial.R
       - name: Chromium first-load and figure export tests
         run: Rscript tests/startup-browser.R
-      - name: Regenerate manifest in installed environment
-        shell: Rscript {0}
-        run: |
-          options(repos=c(CRAN="https://packagemanager.posit.co/cran/__linux__/jammy/latest"))
-          files <- c("app.R","R/analysis.R","R/mtt_visualization_v4_LDJ_Prism.R","R/mtt_shiny.R")
-          rsconnect::writeManifest(appDir=".",appFiles=files)
-          m <- jsonlite::read_json("manifest.json")
-          stopifnot(m$platform=="4.6.0",
-            setequal(names(m$files),files))
-          bad <- vapply(m$packages,function(p) identical(p$Source,"any"),logical(1))
-          stopifnot(!any(bad))
-          writeLines(capture.output(sessionInfo()),"R-session.txt")
       - uses: actions/upload-artifact@v4
         with:
           name: ldj-prism-r460-verified
           path: |
             app.R
-            R/analysis.R
-            R/mtt_visualization_v4_LDJ_Prism.R
-            R/mtt_shiny.R
+            R/
             manifest.json
             R-session.txt
             test-artifacts/
-      - name: Commit verified dependency manifest
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add manifest.json
-          git diff --cached --quiet || git commit -m "build: regenerate verified manifest with R 4.6.0"
-          git push origin "HEAD:$GITHUB_REF_NAME"
-
