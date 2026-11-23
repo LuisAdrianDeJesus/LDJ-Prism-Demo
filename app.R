@@ -92,6 +92,21 @@ p(if(private_mode) "Entorno privado configurado." else "Demo pública: utilice �
 tabPanel("Análisis",
 conditionalPanel("input.module === 'mtt'",
   selectInput("mtt_view","Vista MTT",c("Editorial 4 × 2"="editorial","Vista general"="general"))),
+conditionalPanel("input.module === 'mtt' && input.mtt_view !== 'general'",
+selectInput("mtt_source","Fuente MTT",if(private_mode) c("Demostración sintética"="synthetic","Bundle auditado privado (LDJ_MTT_ROOT)"="private") else c("Demostración sintética"="synthetic")),
+checkboxInput("mtt_user_data","Usar tabla seleccionada",FALSE),
+selectInput("mtt_display_unit","Unidad de representación",c("uM","nM","mM","M")),
+selectInput("mtt_series_1","Serie A/B",choices=NULL),
+selectInput("mtt_series_2","Serie C/D",choices=NULL),
+selectInput("mtt_series_3","Serie E/F",choices=NULL),
+selectInput("mtt_series_4","Serie G/H",choices=NULL),
+tags$details(tags$summary("Asignar controles por serie y experimento"),
+  helpText("Las referencias visuales no duplican observaciones físicas ni habilitan contrastes inferenciales."),
+  rHandsontableOutput("mtt_control_grid"),
+  actionButton("mtt_control_apply","Guardar asignaciones de controles"),
+  textOutput("mtt_control_status")),
+actionButton("mtt_run","Ejecutar análisis de la tabla"),
+textOutput("mtt_run_status")),
 actionButton("run_analysis","Ejecutar análisis"),
 textOutput("workflow_status"),
 textInput("control_label_default", "Etiqueta del control", "No tratado"),
@@ -141,21 +156,7 @@ actionButton("apply_preset", "Aplicar preset"), helpText("Propuestas de estilo; 
 ),
 tabPanel("MTT 4×2",
 p("Las opciones gráficas no recalculan modelos ni comparaciones. La demo usa resultados calculados exclusivamente de datos sintéticos."),
-selectInput("mtt_source","Fuente MTT",if(private_mode) c("Demostración sintética"="synthetic","Bundle auditado privado (LDJ_MTT_ROOT)"="private") else c("Demostración sintética"="synthetic")),
 selectInput("mtt_target","Aplicar estilo a",c("Todos los paneles"="all",LETTERS[1:8])),
-checkboxInput("mtt_user_data","Usar tabla seleccionada",FALSE),
-selectInput("mtt_display_unit","Unidad de representación",c("uM","nM","mM","M")),
-selectInput("mtt_series_1","Serie A/B",choices=NULL),
-selectInput("mtt_series_2","Serie C/D",choices=NULL),
-selectInput("mtt_series_3","Serie E/F",choices=NULL),
-selectInput("mtt_series_4","Serie G/H",choices=NULL),
-tags$details(tags$summary("Asignar controles por serie y experimento"),
-  helpText("Las referencias visuales no duplican observaciones físicas ni habilitan contrastes inferenciales."),
-  rHandsontableOutput("mtt_control_grid"),
-  actionButton("mtt_control_apply","Guardar asignaciones de controles"),
-  textOutput("mtt_control_status")),
-actionButton("mtt_run","Ejecutar análisis de la tabla"),
-textOutput("mtt_run_status"),
 textInput("mtt_title","Título del panel (vacío: automático)",""),
 textInput("mtt_x","Eje X (vacío: global)",""),
 textInput("mtt_y","Eje Y (vacío: global)",""),
@@ -254,11 +255,12 @@ server <- function(input, output, session) {
     !identical(input$mtt_view,"general")) "mtt4x2" else "universal")
   manual <- reactiveVal(FALSE)
   manual_snapshot <- reactiveVal(NULL)
+  draft_pending <- reactiveVal(FALSE)
   run_signature <- reactive(serialize(list(analysis_signature(),input$module,
     input$activity_control_type,input$safety_table,input$safety_display,input$decimal,
     input$ic50_value,input$cc20_value,input$cc50_value,input$ic_unit,input$cc_unit),NULL))
   analysis_ready <- reactive({
-    req(!manual() || identical(manual_snapshot(), run_signature()))
+    req(!manual() || (!draft_pending() && identical(manual_snapshot(), run_signature())))
   })
   color_series <- reactive({
     if(identical(figure_template(),"mtt4x2") && !isTRUE(input$mtt_user_data))
@@ -448,6 +450,7 @@ server <- function(input, output, session) {
     source_data(d)
     working(d)
     manual(TRUE)
+    draft_pending(FALSE)
     manual_snapshot(NULL)
     updateCheckboxInput(session,"safety_table",value=identical(input$entry_type,"parameters"))
     updateCheckboxInput(session,"mtt_user_data",value=TRUE)
@@ -468,8 +471,28 @@ server <- function(input, output, session) {
     if(!nrow(d) || !ncol(d) || !any(vapply(d,function(x)
       any(!is.na(x) & nzchar(trimws(as.character(x)))),logical(1))))
       stop("Introduzca al menos un valor antes de confirmar.")
+    if("parameter"%in%names(d)) {
+      rows <- !is.na(d$parameter) & nzchar(trimws(d$parameter))
+      if(!any(rows)) stop("Indique un parámetro IC50, CC20 o CC50.")
+      ldj_safety_results(d[rows,,drop=FALSE],"group",input$decimal %||% ".")
+    }
     working(d)
+    draft_pending(FALSE)
   }
+  observeEvent(input$grid, {
+    if(!manual()) return()
+    d <- tryCatch(ldj_mtt_normalize_numeric(grid_data(),input$decimal %||% "."),
+      error=function(e) NULL)
+    if(!is.null(d)) {
+      current <- working()
+      canonical <- function(table) lapply(table,function(x) {
+        x <- as.character(x)
+        x[is.na(x)] <- ""
+        x
+      })
+      draft_pending(!identical(canonical(d),canonical(current)))
+    }
+  },ignoreInit=TRUE)
   observeEvent(input$confirm_table, {
     tryCatch({
       confirm_grid()
@@ -477,6 +500,10 @@ server <- function(input, output, session) {
     },error=function(e) showNotification(conditionMessage(e),type="error"))
   })
   observeEvent(input$run_analysis, {
+    if(manual() && draft_pending()) {
+      showNotification("Confirme los cambios de la tabla en Datos.",type="warning")
+      return()
+    }
     if(identical(figure_template(),"mtt4x2") && isTRUE(input$mtt_user_data)) {
       run_mtt()
       if(!identical(table_snapshot(),analysis_signature())) return()
@@ -492,7 +519,7 @@ server <- function(input, output, session) {
   })
   output$table_state <- renderText(if(manual()) "Tabla manual. Confirme los cambios antes de analizar." else
     "Tabla de sesión. Puede editarla o crear una tabla independiente.")
-  output$workflow_status <- renderText(if(manual() && !identical(manual_snapshot(),run_signature()))
+  output$workflow_status <- renderText(if(manual() && (draft_pending() || !identical(manual_snapshot(),run_signature())))
     "Datos o ajustes pendientes de analizar." else "La figura usa los datos confirmados.")
   output$import_controls <- renderUI({
     tagList(fileInput("upload", "Importar CSV/TSV/XLS/XLSX no confidencial", accept=c(".csv",".tsv",".xls",".xlsx")),
@@ -563,7 +590,7 @@ server <- function(input, output, session) {
     else paste(nrow(m),"asignaciones visuales; los controles físicos permanecen únicos.")
   })
   output$grid <- renderRHandsontable({
-    rhandsontable(working(), readOnly=FALSE, rowHeaders=TRUE, stretchH="all",contextMenu=TRUE)
+    rhandsontable(working(), readOnly=FALSE, rowHeaders=TRUE, stretchH="all",contextMenu=TRUE,useTypes=FALSE)
   })
   observeEvent(input$apply_grid, {
     req(input$grid)
