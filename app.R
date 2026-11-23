@@ -109,7 +109,9 @@ actionButton("mtt_run","Ejecutar análisis de la tabla"),
 textOutput("mtt_run_status"),
 selectInput("mtt_inference","Análisis estadístico",c("ANOVA de una vía + Dunnett contra control"="anova","Solo análisis descriptivo"="descriptive")),
 selectInput("mtt_reference","Control de referencia",c("No tratado"="untreated","Vehículo"="vehicle","Negativo"="negative","Positivo"="positive","Infectado sin tratamiento"="infected_untreated")),
-verbatimTextOutput("mtt_inference_report"),
+h4("ANOVA MTT"),tableOutput("mtt_anova_table"),
+h4("Dunnett MTT"),tableOutput("mtt_dunnett_table"),
+tags$details(tags$summary("Diagnósticos y trazabilidad"),verbatimTextOutput("mtt_inference_report")),
 downloadButton("mtt_statistics","Descargar resultados MTT (JSON)")),
 actionButton("run_analysis","Ejecutar análisis"),
 textOutput("workflow_status"),
@@ -430,6 +432,25 @@ server <- function(input, output, session) {
     req(table_result(),identical(table_snapshot(),analysis_signature()))
     ldj_mtt_inference_report(table_result())
   })
+  output$mtt_anova_table <- renderTable({
+    report <- current_mtt_report()
+    do.call(rbind,lapply(names(report),function(series) {
+      z <- report[[series]]
+      data.frame(Serie=series,Experimento=z$audit$experiment %||% "ND",
+        F=z$anova[1,"F value"] %||% NA_real_,GL=z$anova[1,"Df"] %||% NA_real_,
+        GL_residual=z$anova[2,"Df"] %||% NA_real_,p=format.pval(z$anova[1,"Pr(>F)"] %||% NA_real_,digits=4),
+        Estado=z$status)
+    }))
+  },na="ND")
+  output$mtt_dunnett_table <- renderTable({
+    report <- current_mtt_report()
+    do.call(rbind,lapply(names(report),function(series) {
+      z <- report[[series]]
+      if(!is.null(z$dunnett)) data.frame(Serie=series,Control=z$audit$control_type,
+        Contraste=z$dunnett$contrast,Diferencia=z$dunnett$difference,
+        p_ajustado=format.pval(z$dunnett$p_adjusted,digits=4),Significancia=z$dunnett$significance)
+    }))
+  },na="ND")
   output$mtt_inference_report <- renderPrint(print(current_mtt_report()))
   output$mtt_statistics <- downloadHandler(filename=function() "LDJ-Prism-MTT-estadistica.json",
     content=function(file) jsonlite::write_json(current_mtt_report(),file,pretty=TRUE,auto_unbox=TRUE))

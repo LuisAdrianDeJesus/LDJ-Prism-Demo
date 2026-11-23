@@ -56,7 +56,10 @@ ldj_mtt_inference <- function(d,x,y,type="untreated",confirmed=FALSE) {
   if(is.null(out$labels)) return(unavailable(sub("^Inferencia ND: ","",out$status)))
   included <- d[!d$.is_control | (d$.control_type==type & d$experiment_id==unique(experiments)),,drop=FALSE]
   included <- included[!is.na(included$experiment_id),,drop=FALSE]
-  out$audit$control_source <- unique(included$control_source[included$.is_control])
+  out$audit$controls <- included[included$.is_control,c("observation_id","experiment_id","control_source","independent_unit_id"),drop=FALSE]
+  out$diagnostics$warnings <- paste(c(
+    if(isTRUE(out$diagnostics$shapiro_p < .05)) "Shapiro: revise la normalidad de residuos.",
+    if(isTRUE(out$diagnostics$fligner_p < .05)) "Fligner: revise la homogeneidad de varianzas."),collapse=" ")
   out$audit$n <- table(as.character(included$.category))
   out$dunnett$category <- out$labels$category
   out$dunnett$significance <- out$labels$label

@@ -44,6 +44,19 @@ for(d2 in list(subset(d,dose>0),within(d,{control_source <- ""}),
   stopifnot(all(vapply(z$rows,function(row) is.null(row$inference$dunnett) &&
     startsWith(row$inference$status,"Inferencia no disponible:"),logical(1))))
 }
+shared <- d
+for(s in series) {
+  ix <- shared$series==s & shared$dose==0
+  shared$observation_id[ix] <- paste0("shared-",1:3)
+  shared$independent_unit_id[ix] <- paste0("shared-unit-",1:3)
+}
+z <- fit(shared,TRUE)
+stopifnot(z$audit$shared_physical_n==3,z$audit$shared_visual_n==12,
+  all(vapply(z$rows,function(row) length(row$inference$audit$control_ids)==3L,logical(1))))
+for(d2 in list(d[!(d$dose==0 & d$replicate!=1),],within(d,{response[1] <- NA_real_}))) {
+  dd <- prepare_controls(d2,"dose","response",series_column="series")
+  stopifnot(is.null(ldj_mtt_inference(dd[dd$series=="A",],"dose","response",confirmed=TRUE)$dunnett))
+}
 dir.create("test-artifacts",showWarnings=FALSE)
 jsonlite::write_json(ldj_mtt_inference_report(new),"test-artifacts/mtt-anova-reference.json",pretty=TRUE,auto_unbox=TRUE)
 cat("MTT ANOVA and Dunnett reference, physical units, blocked ineligible designs, and identical CC50/CI: PASS\n")
