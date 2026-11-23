@@ -84,6 +84,13 @@ tryCatch({
     jsonlite::toJSON(rows,auto_unbox=TRUE)))
   app$wait_for_idle(timeout=60000)
   capture("mtt-manual-grid.png")
+  # Exercise the Posit failure path: a pasted treatment-only table has no control ID columns.
+  treatments <- fixture[c("concentration","response","group","replicate")]
+  treatment_tsv <- paste(capture.output(write.table(treatments,sep="\t",
+    row.names=FALSE,quote=FALSE)),collapse="\n")
+  app$set_inputs(paste_tsv=treatment_tsv)
+  app$click("apply_paste")
+  app$wait_for_js("HTMLWidgets.find('#grid')?.hot?.countCols() === 4",timeout=30000)
   app$click("confirm_table")
   app$set_inputs(module="mtt",mtt_view="editorial",model_reason="Synthetic test")
   app$set_inputs(mtt_target="A")
@@ -101,7 +108,7 @@ tryCatch({
   capture("mtt-manual-invalidated.png")
   app$click("run_analysis")
   app$wait_for_js("Boolean(document.querySelector('#plot img')?.naturalWidth)",timeout=60000)
-  app$set_inputs(inspector="Exportar",width=8,height=12,dpi="300")
+  app$set_inputs(inspector="Exportar",width=8,height=12,dpi="600")
   for(fmt in c("svg","pdf","png")) {
     file <- file.path("test-artifacts",paste0("mtt-manual.",fmt))
     app$get_download(fmt,filename=file)
@@ -109,7 +116,9 @@ tryCatch({
     if(fmt=="svg") {
       svg <- readLines(file,warn=FALSE)
       stopifnot(all(vapply(LETTERS[1:8],function(tag) any(grepl(paste0(">",tag,"[. ]"),svg)),logical(1))),
-        any(grepl("Manual S4",svg,fixed=TRUE)))
+        any(grepl("Manual S4",svg,fixed=TRUE)),
+        any(grepl("CC50",svg,fixed=TRUE)),
+        any(grepl("Sin comparaciones relativas al control",svg,fixed=TRUE)))
     }
   }
   capture("mtt-manual-figure.png")
@@ -125,8 +134,14 @@ tryCatch({
   mixed <- data.frame(concentration=fixture$concentration,response=fixture$response,
     group=fixture$group,replicate=fixture$replicate,parameter="",estimate=NA_real_,unit="")
   mixed$response[1] <- 90
-  parameters <- data.frame(concentration=NA_real_,response=NA_real_,
-    group=paste0("Manual S",1:4),replicate=NA_real_,parameter="IC50",estimate=1:4,unit="uM")
+  mixed$lower <- mixed$upper <- NA_real_
+  parameters <- expand.grid(group=paste0("Manual S",1:4),parameter=c("IC50","CC20","CC50"),
+    stringsAsFactors=FALSE,KEEP.OUT.ATTRS=FALSE)
+  parameters$concentration <- parameters$response <- parameters$replicate <- NA_real_
+  parameters$estimate <- rep(c(1,.1,8),each=4)
+  parameters$unit <- "uM"
+  parameters$lower <- .8*parameters$estimate
+  parameters$upper <- 1.2*parameters$estimate
   tsv <- paste(capture.output(write.table(rbind(mixed,parameters),sep="\t",row.names=FALSE,quote=FALSE,na="")),collapse="\n")
   app$set_inputs(paste_tsv=tsv)
   app$click("apply_paste")
@@ -136,9 +151,22 @@ tryCatch({
   app$click("run_analysis")
   app$wait_for_js("Boolean(document.querySelector('#plot img')?.naturalWidth)",timeout=60000)
   app$set_inputs(inspector="Exportar")
-  file <- file.path("test-artifacts","manual-safety.svg")
-  app$get_download("svg",filename=file)
-  stopifnot(any(grepl("Manual S4",readLines(file,warn=FALSE),fixed=TRUE)))
+  for(source in c("regression","table","both")) {
+    app$set_inputs(cc20_source=source)
+    file <- file.path("test-artifacts",paste0("safety-",source,".svg"))
+    app$get_download("svg",filename=file)
+    svg <- paste(readLines(file,warn=FALSE),collapse=" ")
+    stopifnot(grepl("Manual S4",svg,fixed=TRUE),
+      grepl("CC20 · Ajuste",svg,fixed=TRUE)==(source!="table"),
+      grepl("CC20 · Tabla",svg,fixed=TRUE)==(source!="regression"))
+    if(source=="both") stopifnot(grepl("Discrepancia:",svg,fixed=TRUE),
+      grepl("Advertencia: CC20 &lt; IC50",svg,fixed=TRUE))
+  }
+  for(fmt in c("pdf","png")) {
+    file <- file.path("test-artifacts",paste0("safety-both.",fmt))
+    app$get_download(fmt,filename=file)
+    stopifnot(file.info(file)$size>10000)
+  }
   app$set_inputs(inspector="Datos",module="mtt",unit="nM")
   app$click("load_example")
   app$wait_for_idle()
@@ -146,5 +174,43 @@ tryCatch({
     app$get_value(input="group")=="Compuesto",app$get_value(input="unit")=="uM",
     !app$get_value(input="mtt_user_data"),!app$get_value(input="safety_table"))
   cat("Browser manual four-series MTT, edit/recalculate/export, activity, safety and example reset: PASS\n")
+  # Distinct second run with physical, traceable, independent controls.
+  app$click("blank_table")
+  with_controls <- rbind(treatments,
+    expand.grid(concentration=0,response=c(99,100,101),group=paste0("Manual S",1:4),
+      KEEP.OUT.ATTRS=FALSE,stringsAsFactors=FALSE) |> transform(replicate=rep(1:3,4)) |>
+      (function(d) d[names(treatments)])())
+  with_controls$control_type <- ifelse(with_controls$concentration==0,"untreated","treatment")
+  with_controls$observation_id <- paste0("QA-",seq_len(nrow(with_controls)))
+  with_controls$independent_unit_id <- with_controls$observation_id
+  with_controls$experiment_id <- "QA"
+  with_controls$control_source <- "Synthetic fixture"
+  with_controls$inference_eligible <- with_controls$concentration==0
+  block <- paste(capture.output(write.table(with_controls,sep="\t",row.names=FALSE,
+    quote=FALSE)),collapse="\n")
+  app$set_inputs(paste_tsv=block)
+  app$click("apply_paste")
+  app$wait_for_js("HTMLWidgets.find('#grid')?.hot?.countRows()===96",timeout=30000)
+  app$click("confirm_table")
+  app$set_inputs(x="concentration",y="response",group="group",unit="uM")
+  app$click("run_analysis")
+  app$wait_for_js("Boolean(document.querySelector('#plot img')?.naturalWidth)",timeout=60000)
+  app$set_inputs(inspector="Exportar")
+  file <- file.path("test-artifacts","mtt-physical-controls.svg")
+  app$get_download("svg",filename=file)
+  stopifnot(any(grepl("No tratado",readLines(file,warn=FALSE),fixed=TRUE)))
+  capture("mtt-physical-controls.png")
+  app$set_inputs(module="activity",inspector="Análisis",activity_control_type="untreated",
+    experiment_id="QA",independent=TRUE,model_reason="Synthetic 4PL regression fixture")
+  app$click("run_analysis")
+  app$wait_for_js("Boolean(document.querySelector('#plot img')?.naturalWidth)",timeout=60000)
+  capture("activity-eligible-controls.png")
+  app$set_inputs(inspector="Exportar")
+  file <- file.path("test-artifacts","activity-eligible-controls.svg")
+  app$get_download("svg",filename=file)
+  svg <- readLines(file,warn=FALSE)
+  stopifnot(any(grepl("ANOVA F",svg,fixed=TRUE)),any(grepl("IC50",svg,fixed=TRUE)),
+    any(grepl("IC95",svg,fixed=TRUE)))
+  cat("Traceable MTT controls and activity inference with eligible controls: PASS\n")
 },finally=app$stop())
 

@@ -85,9 +85,9 @@ ldj_mtt_apply_control_map <- function(physical, group, series, assignments) {
   needed <- c("experiment_id", "observation_id", "series")
   if (!is.data.frame(assignments) || !all(needed %in% names(assignments)))
     stop("El mapa de controles requiere experiment_id, observation_id y series.")
+  if (!nrow(assignments)) return(physical) # no eligible mapping; descriptive only
   if (!all(c(group, "experiment_id", "observation_id") %in% names(physical)))
     stop("Los controles requieren identificadores físicos y experimentales.")
-  if (!nrow(assignments)) return(physical) # no eligible mapping; descriptive only
   a <- assignments[, needed, drop = FALSE]
   a[] <- lapply(a, as.character)
   a[] <- lapply(a, trimws)
