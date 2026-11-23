@@ -46,13 +46,13 @@ tryCatch({
   app$set_inputs(color_target="A",color_element="curve",element_hex="#963C7F")
   app$set_inputs(color_apply=1)
   app$set_inputs(color_scope="series")
-  app$set_inputs(color_target="DTG",color_element="series",element_hex="#123ABC")
+  app$set_inputs(color_target="Ejemplo A",color_element="series",element_hex="#123ABC")
   # Direct Shiny action input preserves the test's explicit colour value.
   app$set_inputs(color_apply=2)
   app$get_download("colors_json",filename=style_path)
   original <- jsonlite::read_json(style_path)
   stopifnot(original$preset=="minimal",original$palette=="Viridis · semitransparente",
-    original$panels$A$curve=="#963C7F",original$series$DTG=="#123ABC")
+    original$panels$A$curve=="#963C7F",original$series[["Ejemplo A"]]=="#123ABC")
 },finally=app$stop())
 restored <- shinytest2::AppDriver$new(app_dir=".",name="beta-style-restore",load_timeout=90000)
 tryCatch({
