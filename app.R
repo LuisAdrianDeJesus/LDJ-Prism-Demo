@@ -435,6 +435,16 @@ server <- function(input, output, session) {
   source_data <- reactiveVal(demo_data)
   working <- reactiveVal(demo_data)
   dataset <- reactive(working())
+  # Only the explicitly synthetic bundled fixture may auto-document an example fit.
+  # Imported/manual data still require an independent model justification.
+  observeEvent(input$module, {
+    if(identical(input$module,"activity") &&
+       identical(isolate(dataset()),demo_data) &&
+       !nzchar(trimws(isolate(input$model_reason) %||% ""))) {
+      updateTextInput(session,"model_reason",
+        value="Demostración sintética: ajuste 4PL para ilustrar la interfaz; revise la adecuación del modelo antes de usar datos experimentales.")
+    }
+  },ignoreInit=TRUE)
   observations <- reactive({
     d <- dataset()
     if ("parameter" %in% names(d))

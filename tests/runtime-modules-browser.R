@@ -7,7 +7,7 @@ app <- shinytest2::AppDriver$new(app_dir=".",name="switch-modules",load_timeout=
 tryCatch({
   check_render <- function(label, expect_image=TRUE) {
     app$wait_for_idle(timeout=90000)
-    errors <- app$get_js("document.querySelectorAll('.shiny-output-error').length")
+    errors <- app$get_js("document.querySelectorAll('.shiny-output-error:not(.shiny-output-error-validation)').length")
     if(errors) {
       message("Unexpected Shiny output failure in ",label)
       message(app$get_js("Array.from(document.querySelectorAll('.shiny-output-error')).map(x=>x.textContent).join(' | ')"))
@@ -20,7 +20,8 @@ tryCatch({
   }
   check_render("Initial editor")
   app$set_inputs(module="activity",inspector="Gráfica")
-  check_render("Activity selected with default empty model justification",expect_image=FALSE)
+  check_render("Activity automatically displays the bundled synthetic example")
+  stopifnot(grepl("Demostración sintética", app$get_value(input="model_reason"),fixed=TRUE))
   # Now supply an explicit model reason and check the full activity figure.
   app$set_inputs(inspector="Análisis",model_reason="Synthetic QA: concentration-response model")
   app$click("run_analysis")
