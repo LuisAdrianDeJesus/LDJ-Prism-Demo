@@ -45,6 +45,7 @@ dim <- readBin(con,integer(),n=2,size=4,endian="big"); close(con)
 stopifnot(identical(dim,c(7200L,10800L)))
 cat("MTT v4: source without side effects; 8 panels; 6 unique shared controls; immutable input; panel styles; SVG/PDF/PNG 600dpi: PASS\n")
 
+source(file.path(root,"R/mtt_data_entry.R"))
 # Treatment-only imported tables need no physical control IDs if the map is empty.
 physical <- data.frame(series="synthetic")
 empty_map <- data.frame(experiment_id=character(),observation_id=character(),series=character())
