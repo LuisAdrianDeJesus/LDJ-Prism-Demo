@@ -60,11 +60,13 @@ tryCatch({
   app$wait_for_idle()
   app$click("confirm_table")
   app$set_inputs(module="universal",kind="scatter",multipanel=FALSE)
+  stopifnot(app$get_value(input="x")=="concentration",app$get_value(input="y")=="response")
   app$click("run_analysis")
   app$wait_for_js("Boolean(document.querySelector('#plot img')?.naturalWidth)",timeout=60000)
   app$set_inputs(inspector="Exportar")
   f <- tempfile(fileext=".svg"); app$get_download("svg",filename=f)
   stopifnot(file.info(f)$size>0); unlink(f)
+  app$get_screenshot("test-artifacts/manual-figure.png")
   cat("Browser blank parameter and observation grids, module navigation and manual SVG: PASS\n")
 },finally=app$stop())
 

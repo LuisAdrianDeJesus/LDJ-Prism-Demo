@@ -734,7 +734,10 @@ server <- function(input, output, session) {
       if(!is.null(current) && current%in%choices) current else
         if(preferred%in%choices) preferred else if(length(choices)) choices[1] else ""
     }
-    proposed <- list(x=choose(isolate(input$x),cols,if("concentration"%in%cols) "concentration" else "Concentracion_uM"),
+    old_x <- isolate(input$x)
+    if(manual() && "concentration"%in%numeric_cols && !isTRUE(old_x%in%numeric_cols))
+      old_x <- "concentration"
+    proposed <- list(x=choose(old_x,cols,if("concentration"%in%cols) "concentration" else "Concentracion_uM"),
       y=choose(isolate(input$y),numeric_cols,if("response"%in%numeric_cols) "response" else "Viabilidad_pct"),
       group=choose(isolate(input$group),c(".none",cols),if("group"%in%cols) "group" else "Compuesto"))
     pending_selection(proposed)
