@@ -76,10 +76,10 @@ tryCatch({
   app$click("blank_table")
   app$wait_for_js("HTMLWidgets.find('#grid')?.hot?.getColHeader(3) === 'replicate' && !HTMLWidgets.find('#grid').hot.getDataAtCell(0,0)",timeout=30000)
   fixture <- expand.grid(concentration=c(.125,.25,.5,1,2,4,8),replicate=1:3,
-    group=paste0("Manual S",1:4),KEEP.OUT.ATTRS=FALSE)
+    group=paste0("Manual S",1:4),KEEP.OUT.ATTRS=FALSE,stringsAsFactors=FALSE)
   fixture$response <- with(fixture, 5+95/(1+(concentration/as.numeric(sub("Manual S","",group)))^1.4)+replicate-2)
-  rows <- lapply(seq_len(nrow(fixture)),function(i) as.list(as.character(
-    unlist(fixture[i,c("concentration","response","group","replicate")]))))
+  rows <- lapply(seq_len(nrow(fixture)),function(i) lapply(fixture[i,c("concentration","response","group","replicate")],as.character))
+  rows <- lapply(rows,unname)
   app$run_js(sprintf("var hot=HTMLWidgets.find('#grid').hot; var rows=%s; hot.alter('insert_row',0,rows.length-1); hot.populateFromArray(0,0,rows,undefined,undefined,'edit');",
     jsonlite::toJSON(rows,auto_unbox=TRUE)))
   app$wait_for_idle(timeout=60000)
