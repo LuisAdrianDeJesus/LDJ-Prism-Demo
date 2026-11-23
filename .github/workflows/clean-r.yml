@@ -79,6 +79,7 @@ jobs:
         run: |
           Rscript tests/startup-browser.R
           Rscript tests/runtime-modules-browser.R
+          Rscript tests/beta-data-colors-browser.R
       - uses: actions/upload-artifact@v4
         with:
           name: ldj-prism-r460-verified

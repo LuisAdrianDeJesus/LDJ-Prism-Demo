@@ -339,6 +339,7 @@ ldj_color_server <- function(input,output,session,series) {
   shiny::observeEvent(input$colors_import,{
     tryCatch({if(input$colors_import$size>1e6) stop("JSON demasiado grande.")
       z <- ldj_validate_colors(jsonlite::fromJSON(input$colors_import$datapath,simplifyVector=FALSE));state(z)
+      shiny::updateSelectInput(session,"palette",selected=z$palette)
       shiny::updateSelectInput(session,"visual_preset",selected=z$preset)
     },error=function(e) shiny::showNotification(conditionMessage(e),type="error"))
   })
