@@ -7,9 +7,10 @@ library(colourpicker)
 library(rhandsontable)
 library(readxl)
 source(if(file.exists("R/analysis.R")) "R/analysis.R" else "apps/ldj-prism/R/analysis.R", local=TRUE)
-for(module_file in c("mtt_visualization_v4_LDJ_Prism.R","mtt_shiny.R"))
+for(module_file in c("mtt_visualization_v4_LDJ_Prism.R","mtt_data_entry.R","mtt_shiny.R","pharmacology.R"))
   source(file.path(if(dir.exists("R")) "R" else "apps/ldj-prism/R",module_file),local=TRUE)
 private_mode <- identical(Sys.getenv("LDJ_PRISM_MODE"), "private")
+data_entry_enabled <- TRUE
 
 demo_data <- local({
   d <- expand.grid(
@@ -68,8 +69,16 @@ ui <- fluidPage(
     sidebarPanel(width = 3, class="sidebar-panel",
       tabsetPanel(id = "inspector", type = "tabs",
 tabPanel("Datos",
-p(if(private_mode) "Entorno privado: datos de usuario habilitados." else "Demo sintética: importación de usuario deshabilitada."),
+p("Los datos enviados se procesan en la sesión del servidor. La demo pública no garantiza confidencialidad: utilice únicamente datos no confidenciales; reserve datos internos para alojamiento autenticado."),
+checkboxInput("has_header","El archivo incluye encabezados",TRUE),
+textInput("column_names","Nombres de columnas separados por coma",""),
+actionButton("rename_columns","Renombrar columnas"),
+actionButton("add_row","Añadir fila"),actionButton("add_column","Añadir columna"),
+p(if(private_mode) "Entorno privado configurado." else "Demo pública: utilice únicamente tablas no confidenciales."),
       uiOutput("import_controls"),
+      tags$details(tags$summary("Pegar tabla desde Excel (bloque tabulado)"),
+        textAreaInput("paste_tsv","Pegue filas y columnas tabuladas",rows=5),
+        actionButton("apply_paste","Reemplazar tabla con datos pegados")),
       selectInput("sheet", "Hoja del libro", choices=NULL),
       selectInput("decimal", "Separador decimal", c("Punto"=".", "Coma"=",")),
       actionButton("apply_grid", "Aplicar tabla al gráfico"),
@@ -98,9 +107,19 @@ textInput("model_reason", "Justificación del modelo/restricciones", ""),
 checkboxInput("independent", "Confirmo réplicas independientes y control del mismo experimento", FALSE),
 numericInput("control", "Concentración del control", 0, min=0),
 selectInput("unit", "Unidad de concentración", c("uM","nM","mM","M")),
-numericInput("ic50_value", "IC50 para integración", 1, min=0),
-numericInput("cc20_value", "CC20 para integración", 2, min=0),
-numericInput("cc50_value", "CC50 para integración", 5, min=0),
+selectInput("safety_display","Vista de potencia y seguridad",c("Resumen transversal"="summary","Editorial 4×2"="editorial")),
+conditionalPanel("input.module === 'safety' && input.safety_display === 'editorial'",
+  selectInput("cc20_source","Fuente de CC20",c("Calculado por regresión"="regression",
+    "Proporcionado en tabla"="table","Mostrar ambas estimaciones"="both"),selected="table"),
+  numericInput("cc20_tolerance","Tolerancia (% del CC20 del ajuste)",10,min=0,step=1)),
+helpText("Editorial: combine en una tabla cuatro grupos, filas de parámetros con parameter/estimate/unit y filas de viabilidad con parameter vacío y columnas X/Y. X debe usar la unidad de concentración seleccionada."),
+selectInput("activity_control_type","Control inferencial de actividad",c("Infectado sin tratamiento"="infected_untreated","Células sanas sin tratamiento"="untreated","Vehículo"="vehicle","Negativo"="negative","Positivo"="positive")),
+checkboxInput("safety_table","Leer parámetros de la tabla (parameter, estimate, unit; lower/upper opcionales)",FALSE),
+checkboxInput("activity_editorial","Actividad: pares editoriales por serie (hasta 4)",TRUE),
+selectInput("safety_unit","Unidad de presentación de parámetros",c("nM","uM","mM","M"),selected="uM"),
+numericInput("ic50_value", "IC50 para integración", NA_real_, min=0),
+numericInput("cc20_value", "CC20 para integración", NA_real_, min=0),
+numericInput("cc50_value", "CC50 para integración", NA_real_, min=0),
 selectInput("ic_unit", "Unidad IC50", c("uM","nM","mM","M")),
 selectInput("cc_unit", "Unidad CC20/CC50", c("uM","nM","mM","M")),
 selectInput("kind", "Tipo de gráfica",
@@ -114,6 +133,19 @@ tabPanel("MTT 4×2",
 p("Las opciones gráficas no recalculan modelos ni comparaciones. La demo usa resultados calculados exclusivamente de datos sintéticos."),
 selectInput("mtt_source","Fuente MTT",if(private_mode) c("Demostración sintética"="synthetic","Bundle auditado privado (LDJ_MTT_ROOT)"="private") else c("Demostración sintética"="synthetic")),
 selectInput("mtt_target","Aplicar estilo a",c("Todos los paneles"="all",LETTERS[1:8])),
+checkboxInput("mtt_user_data","Usar tabla seleccionada",FALSE),
+selectInput("mtt_display_unit","Unidad de representación",c("uM","nM","mM","M")),
+selectInput("mtt_series_1","Serie A/B",choices=NULL),
+selectInput("mtt_series_2","Serie C/D",choices=NULL),
+selectInput("mtt_series_3","Serie E/F",choices=NULL),
+selectInput("mtt_series_4","Serie G/H",choices=NULL),
+tags$details(tags$summary("Asignar controles por serie y experimento"),
+  helpText("Las referencias visuales no duplican observaciones físicas ni habilitan contrastes inferenciales."),
+  rHandsontableOutput("mtt_control_grid"),
+  actionButton("mtt_control_apply","Guardar asignaciones de controles"),
+  textOutput("mtt_control_status")),
+actionButton("mtt_run","Ejecutar análisis de la tabla"),
+textOutput("mtt_run_status"),
 textInput("mtt_title","Título del panel (vacío: automático)",""),
 textInput("mtt_x","Eje X (vacío: global)",""),
 textInput("mtt_y","Eje Y (vacío: global)",""),
@@ -141,15 +173,7 @@ textInput("plot_title", "Título", ""),
       selectInput("y_scale", "Escala Y",
                   choices = c("Lineal" = "linear", "Log10" = "log10"))
 ),
-tabPanel("Colores",
-selectInput("palette", "Paleta",
-                  choices = c("LDJ - Okabe-Ito" = "Okabe-Ito",
-                              "Prism clasico - blanco y negro" = "Prism clasico B/N",
-                              "Viridis" = "Viridis", "Grises" = "Grises",
-                              "Elegir colores manualmente" = "Personalizada")),
-      conditionalPanel("input.palette == 'Personalizada'",
-                       uiOutput("custom_color_inputs"))
-),
+tabPanel("Colores",ldj_color_ui()),
 tabPanel("Símbolos y líneas",
 checkboxInput("points", "Mostrar observaciones individuales", TRUE),
       numericInput("point_size", "Tamaño de símbolos", 2, min = 0.5, max = 9, step = 0.5),
@@ -198,11 +222,11 @@ downloadButton("config", "Configuración JSON")
         uiOutput("status")
       ),
       tags$details(tags$summary("Mostrar / ocultar tabla de datos"),
-        conditionalPanel("input.figure_template != 'mtt4x2'",rHandsontableOutput("grid")),
+        rHandsontableOutput("grid"),
         conditionalPanel("input.figure_template == 'mtt4x2'",p("Primeras 60 observaciones MTT; el registro completo de controles se conserva en la sesión."),tableOutput("mtt_data"))),
       conditionalPanel("input.figure_template != 'mtt4x2'",
         h4("Resultados"), verbatimTextOutput("analysis_status"),
-        tableOutput("results"), tableOutput("anova"), tableOutput("diagnostics"), tableOutput("comparisons")),
+        tableOutput("results"), conditionalPanel("input.module == 'activity'",verbatimTextOutput("activity_audit")), tableOutput("anova"), tableOutput("diagnostics"), tableOutput("comparisons")),
       p("Piloto con datos sintéticos. Las opciones visuales no modifican la tabla original.",
         class = "help-note")
     )
@@ -210,6 +234,56 @@ downloadButton("config", "Configuración JSON")
 )
 
 server <- function(input, output, session) {
+  color_series <- reactive({
+    if(identical(input$figure_template,"mtt4x2") && !isTRUE(input$mtt_user_data))
+      return(ldj_mtt_defaults()$order)
+    if(is.null(input$group)||input$group==".none"||!input$group%in%names(dataset())) return("Datos")
+    z <- as.character(dataset()[[input$group]]);sort(unique(z[!is.na(z)&nzchar(z)]))
+  })
+  appearance <- ldj_color_server(input,output,session,color_series)
+  table_result <- reactiveVal(NULL)
+  table_snapshot <- reactiveVal(NULL)
+  mtt_control_map <- reactiveVal(NULL)
+  analysis_signature <- reactive(serialize(list(data=dataset(),control_map=mtt_control_map(),x=input$x,y=input$y,
+    group=input$group,series=lapply(1:4,function(i) input[[paste0("mtt_series_",i)]]),
+    unit=input$unit,model=input$model,reason=input$model_reason,
+    threshold=input$threshold_mode,zero=input$zero_policy,
+    control=input$control,control_type=input$control_type_default,
+    experiment=input$experiment_id,control_experiment=input$control_experiment,
+    source=input$control_source,independent=input$independent),NULL))
+  observeEvent(list(dataset(),input$group), {
+    req(input$group,input$group%in%names(dataset()))
+    values <- unique(as.character(dataset()[[input$group]])); values <- values[!is.na(values)&nzchar(values)]
+    for(i in 1:4) {
+      old <- isolate(input[[paste0("mtt_series_",i)]])
+      selected <- if(!is.null(old)&&old%in%values) old else if(length(values)>=i) values[i] else ""
+      updateSelectInput(session,paste0("mtt_series_",i),choices=c("Seleccionar"="",values),selected=selected)
+    }
+  })
+  observeEvent(input$mtt_run, {
+    tryCatch({
+      req(selection_ready(),input$group!=".none")
+      if (!identical(input$threshold_mode,"absolute"))
+        stop("Esta plantilla sólo admite ajustes absolutos; el análisis relativo al control no está validado.")
+      series <- vapply(1:4,function(i) input[[paste0("mtt_series_",i)]],character(1))
+      incoming <- if(!is.null(input$grid)) rhandsontable::hot_to_r(input$grid) else dataset()
+      incoming <- ldj_mtt_normalize_numeric(incoming,
+        if(is.null(input$decimal)) "." else input$decimal)
+      if(!identical(incoming,dataset())) {
+        working(incoming)
+        mtt_control_map(ldj_mtt_default_control_map(incoming,input$x,input$y,input$group))
+      }
+      result <- ldj_mtt_analyze_table(incoming,input$x,input$y,input$group,
+        series,input$unit,input$model,control_assignments=mtt_control_map())
+      table_result(result)
+      table_snapshot(analysis_signature())
+    },error=function(e) showNotification(conditionMessage(e),type="error",duration=NULL))
+  })
+  output$mtt_run_status <- renderText({
+    if(is.null(table_result())) "Seleccione columnas, unidad y series; ejecute el análisis."
+    else if(!identical(table_snapshot(),analysis_signature())) "Datos o configuración modificados: vuelva a ejecutar el análisis antes de exportar."
+    else "Análisis vigente; los cambios visuales conservan los ajustes."
+  })
   mtt_styles <- reactiveVal(list())
   mtt_bundle <- reactive({
     req(input$figure_template=="mtt4x2",input$mtt_source)
@@ -256,16 +330,37 @@ server <- function(input, output, session) {
     },error=function(e) showNotification(conditionMessage(e),type="error"))
   })
   observeEvent(input$mtt_reset,mtt_styles(list()))
+  observeEvent(list(input$palette_apply,input$colors_reset),{
+    styles <- mtt_styles()
+    for(tag in names(styles)) styles[[tag]]$color <- NULL
+    mtt_styles(styles)
+  },ignoreInit=TRUE)
   observeEvent(input$figure_template,{
     if(input$figure_template=="mtt4x2") {
       updateNumericInput(session,"width",value=12)
       updateNumericInput(session,"height",value=18)
     }
   })
+  observeEvent(list(input$module,input$activity_editorial,input$safety_display),{
+    if(!identical(input$figure_template,"universal")) return()
+    if(identical(input$module,"activity") && isTRUE(input$activity_editorial)) {
+      updateNumericInput(session,"width",value=12)
+      updateNumericInput(session,"height",value=max(5,4.5*min(4,length(color_series()))))
+    }
+    if(identical(input$module,"safety") && identical(input$safety_display,"editorial")) {
+      updateNumericInput(session,"width",value=12)
+      updateNumericInput(session,"height",value=18)
+    }
+    if(identical(input$module,"safety") && !identical(input$safety_display,"editorial")) {
+      updateNumericInput(session,"width",value=10)
+      updateNumericInput(session,"height",value=8)
+    }
+  },ignoreInit=TRUE)
   mtt_result <- reactive({
     req(input$figure_template=="mtt4x2",input$font_size,input$palette,input$dispersion)
-    b <- mtt_bundle(); pal <- ldj_mtt_defaults()$palette
-    colors <- palette_ldj(4,input$palette)
+    b <- if(isTRUE(input$mtt_user_data)) list(synthetic=FALSE) else mtt_bundle(); pal <- ldj_mtt_defaults()$palette
+    color_keys <- if(isTRUE(input$mtt_user_data)) vapply(1:4,function(i) input[[paste0("mtt_series_",i)]] %||% "",character(1)) else ldj_mtt_defaults()$order
+    colors <- unname(ldj_series_colors(appearance(),color_keys)[color_keys])
     if(input$palette=="Personalizada") for(i in 1:4) {
       v <- input[[paste0("custom_color_",i)]]
       if(!is.null(v) && grepl("^#[[:xdigit:]]{6}$",v)) colors[i] <- v
@@ -276,13 +371,20 @@ server <- function(input, output, session) {
       font_size=input$font_size,font_family=input$font_family,show_points=input$points,
       point_shape=as.integer(input$point_shape),point_size=input$point_size,
       summary_measure=input$dispersion,x_scale=input$x_scale,panels=mtt_styles(),
-      plot_width=input$width,plot_height=input$height,dpi=as.integer(input$dpi))
+      plot_width=input$width,plot_height=input$height,dpi=as.integer(input$dpi),appearance=appearance())
     if(isTRUE(b$synthetic)) {
       cfg$short <- stats::setNames(paste("Ejemplo",LETTERS[1:4]),ldj_mtt_defaults()$order)
       cfg$label_significance <- FALSE
       cfg$plot_caption <- paste("DEMO · datos sintéticos. Medias ±",input$dispersion,
         "; bandas locales: dispersión observada, no IC del ajuste. Sin contrastes Dunnett inventados.",
         "Seis controles físicos compartidos entre dos contextos gráficos.",input$caption)
+    }
+    if(isTRUE(input$mtt_user_data)) {
+      validate(need(!is.null(table_result()),"Ejecute el análisis de la tabla."),
+        need(identical(table_snapshot(),analysis_signature()),"Datos o configuración modificados: vuelva a ejecutar el análisis."))
+      cfg$x_label <- if(identical(input$x_label,"Concentración (µM)"))
+         paste0("Concentración (",if(input$mtt_display_unit=="uM") "µM" else input$mtt_display_unit,")") else input$x_label
+      return(ldj_mtt_table_figure(ldj_mtt_display_unit(table_result(),input$mtt_display_unit),cfg))
     }
     ldj_mtt_editor_build(b,cfg)
   })
@@ -292,50 +394,108 @@ server <- function(input, output, session) {
     print(list(synthetic=z$synthetic,physical_shared_controls=z$shared_physical_n,
       visual_context_observations=z$shared_visual_n,inference=z$inference))
   })
-  output$mtt_data <- renderTable({req(input$figure_template=="mtt4x2"); head(mtt_bundle()$orig,60)})
+  output$mtt_data <- renderTable({req(input$figure_template=="mtt4x2");
+    if(isTRUE(input$mtt_user_data)) {req(table_result()); return(head(do.call(rbind,lapply(table_result()$rows,`[[`,"data")),60))}
+    head(mtt_bundle()$orig,60)})
   output$plot_container <- renderUI({
     if(identical(input$figure_template,"mtt4x2")) {
       zoom <- if(is.null(input$preview_zoom)) 1 else input$preview_zoom/100
       plotOutput("plot",height=paste0(round(1500*zoom),"px"),width=paste0(round(1000*zoom),"px"))
+    } else if(identical(input$module,"safety") && identical(input$safety_display,"editorial")) {
+      plotOutput("plot",height="1280px")
+    } else if(identical(input$module,"activity") && isTRUE(input$activity_editorial)) {
+      n <- length(color_series())
+      plotOutput("plot",height=paste0(320*max(1,min(4,n)),"px"))
     } else plotOutput("plot",height="520px")
   })
   source_data <- reactiveVal(demo_data)
   working <- reactiveVal(demo_data)
   dataset <- reactive(working())
   output$import_controls <- renderUI({
-    if(!private_mode) return(helpText("Para probar pegado, copie las filas sintéticas de la cuadrícula."))
-    tagList(fileInput("upload", "Importar CSV/XLSX", accept=c(".csv",".xlsx")),
+    tagList(fileInput("upload", "Importar CSV/TSV/XLS/XLSX no confidencial", accept=c(".csv",".tsv",".xls",".xlsx")),
       selectInput("separator", "Separador CSV", c("Coma"=",","Punto y coma"=";","Tabulación"="\\t")))
   })
   observeEvent(input$upload, {
-    req(private_mode)
+    req(data_entry_enabled)
     tryCatch({
       ext <- tolower(tools::file_ext(input$upload$name))
-      if(ext=="xlsx") {
+      if(ext %in% c("xls","xlsx")) {
         sheets <- readxl::excel_sheets(input$upload$datapath)
         updateSelectInput(session,"sheet",choices=sheets,selected=sheets[1])
-      } else if(ext=="csv") {
-        d <- read.table(input$upload$datapath,header=TRUE,sep=input$separator,
-          dec=input$decimal,check.names=FALSE,stringsAsFactors=FALSE)
+      } else {
+        d <- ldj_mtt_import_table(input$upload$datapath,input$upload$name,
+          header=!identical(input$has_header,FALSE),
+          decimal=if(is.null(input$decimal)) "." else input$decimal,
+          separator=if(is.null(input$separator)) "," else if(identical(input$separator,"\\t")) "\t" else input$separator)
         source_data(d); working(d)
-      } else stop("Use CSV o XLSX.")
-    },error=function(e) showNotification(conditionMessage(e),type="error"))
+      }
+    },error=function(e) showNotification(conditionMessage(e),type="error",duration=NULL))
   })
   observeEvent(input$sheet, {
-    req(private_mode,input$upload,tolower(tools::file_ext(input$upload$name))=="xlsx",input$sheet)
+    req(data_entry_enabled,input$upload,
+      tolower(tools::file_ext(input$upload$name)) %in% c("xls","xlsx"),input$sheet)
     tryCatch({
-      d <- as.data.frame(readxl::read_excel(input$upload$datapath,sheet=input$sheet))
+      d <- ldj_mtt_import_table(input$upload$datapath,input$upload$name,
+        sheet=input$sheet,header=!identical(input$has_header,FALSE),
+        decimal=if(is.null(input$decimal)) "." else input$decimal)
       source_data(d); working(d)
-    },error=function(e) showNotification(conditionMessage(e),type="error"))
+    },error=function(e) showNotification(conditionMessage(e),type="error",duration=NULL))
+  })
+  observeEvent(input$apply_paste, {
+    tryCatch({
+      d <- ldj_mtt_paste_table(input$paste_tsv,
+        header=!identical(input$has_header,FALSE),
+        decimal=if(is.null(input$decimal)) "." else input$decimal)
+      source_data(d); working(d)
+    },error=function(e) showNotification(conditionMessage(e),type="error",duration=NULL))
+  })
+  observeEvent(list(dataset(),input$x,input$y,input$group), {
+    req(input$x,input$y,input$group,input$group %in% names(dataset()))
+    tryCatch({
+      mtt_control_map(ldj_mtt_default_control_map(dataset(),input$x,input$y,input$group))
+    }, error=function(e) {
+      mtt_control_map(NULL)
+      showNotification(paste("Registro de controles:",conditionMessage(e)),type="warning")
+    })
+  }, priority=95)
+  output$mtt_control_grid <- renderRHandsontable({
+    req(mtt_control_map())
+    if(!nrow(mtt_control_map())) return(NULL)
+    rhandsontable::rhandsontable(mtt_control_map(),readOnly=FALSE,rowHeaders=TRUE,
+      stretchH="all",contextMenu=TRUE)
+  })
+  observeEvent(input$mtt_control_apply, {
+    tryCatch({
+      req(input$mtt_control_grid)
+      map <- rhandsontable::hot_to_r(input$mtt_control_grid)
+      if (!all(c("experiment_id","observation_id","series") %in% names(map)))
+        stop("Conserve los encabezados del registro de controles.")
+      mtt_control_map(map)
+    },error=function(e) showNotification(conditionMessage(e),type="error",duration=NULL))
+  })
+  output$mtt_control_status <- renderText({
+    m <- mtt_control_map()
+    if(is.null(m)||!nrow(m))
+      "No hay asignaciones editables: incluya observation_id y experiment_id para mapear controles."
+    else paste(nrow(m),"asignaciones visuales; los controles físicos permanecen únicos.")
   })
   output$grid <- renderRHandsontable({
-    rhandsontable(working(), readOnly=!private_mode, rowHeaders=TRUE, stretchH="all")
+    rhandsontable(working(), readOnly=FALSE, rowHeaders=TRUE, stretchH="all",contextMenu=TRUE)
   })
   observeEvent(input$apply_grid, {
-    req(private_mode,input$grid)
+    req(input$grid)
     working(hot_to_r(input$grid))
   })
   observeEvent(input$reset_grid, working(source_data()))
+  observeEvent(input$add_row, {d <- working(); d[nrow(d)+1L,] <- NA; working(d)})
+  observeEvent(input$add_column, {d <- working(); d[[make.unique(c(names(d),"Variable"))[ncol(d)+1L]]] <- NA_real_; working(d)})
+  observeEvent(input$rename_columns, {
+    n <- trimws(strsplit(input$column_names,",",fixed=TRUE)[[1]])
+    d <- working()
+    if(length(n)!=ncol(d) || any(!nzchar(n)) || anyDuplicated(n)) {
+      showNotification("Indique un nombre único no vacío por columna.",type="error")
+    } else {names(d) <- n; working(d)}
+  })
   pending_selection <- reactiveVal(NULL)
   selection_ready <- reactive({
     req(input$x,input$y,input$group)
@@ -381,10 +541,15 @@ server <- function(input, output, session) {
   })
 
   analysis <- reactive({
-    req(selection_ready())
     if(is.null(input$module) || input$module=="universal") return(NULL)
-    if(input$module=="safety") return(list(table=selectivity(input$ic50_value,
-      input$cc20_value,input$cc50_value,input$ic_unit,input$cc_unit)))
+    if(input$module=="safety") {
+      d <- if(isTRUE(input$safety_table)) dataset() else data.frame(
+        parameter=c("IC50","CC20","CC50"),estimate=c(input$ic50_value %||% NA_real_,input$cc20_value %||% NA_real_,input$cc50_value %||% NA_real_),
+        unit=c(input$ic_unit,rep(input$cc_unit,2)))
+      if("parameter"%in%names(d)) d <- d[!is.na(d$parameter)&nzchar(trimws(d$parameter)),,drop=FALSE]
+      return(list(table=ldj_safety_results(d,input$group %||% ".none",input$decimal)))
+    }
+    req(selection_ready())
     if(!nzchar(trimws(input$model_reason))) stop("Documente la justificación del modelo.")
     if(identical(input$threshold_mode,"control")) inference_data()
     d <- mapped()
@@ -399,13 +564,27 @@ server <- function(input, output, session) {
     })
     list(table=do.call(rbind,fits))
   })
-  output$results <- renderTable({req(analysis()); analysis()$table},digits=4)
+  output$results <- renderTable({
+    req(analysis())
+    result <- analysis()$table
+    if (identical(input$module, "safety")) {
+      concentration <- result$parameter != "SI"
+      for (column in c("estimate", "lower", "upper")) {
+        values <- result[[column]]
+        display <- ifelse(is.finite(values), formatC(values, format = "fg", digits = 5), NA_character_)
+        small <- concentration & is.finite(values) & abs(values) < 1e-4 & values != 0
+        display[small] <- formatC(values[small], format = "e", digits = 4)
+        result[[column]] <- display
+      }
+    }
+    result
+  },digits=4,na="ND")
   output$analysis_status <- renderText({
-    tryCatch({analysis(); "Resultados calculados. IC: método delta; revise extrapolación y adecuación del modelo."},
+    tryCatch({analysis(); if(identical(input$module,"safety")) return("Estimaciones e IC en M, SI sin unidades. Los IC se muestran únicamente si se proporcionan límites válidos."); "Resultados calculados. IC: método delta; revise extrapolación y adecuación del modelo."},
       error=function(e) conditionMessage(e))
   })
   output$anova <- renderTable({
-    req(input$module %in% c("mtt","activity"),isTRUE(input$independent))
+    req(identical(input$module,"mtt"),isTRUE(input$independent))
     validate_provenance(input$experiment_id,input$control_experiment,input$control_source,input$independent)
     do.call(rbind,lapply(split(inference_data(),inference_data()$series),function(g) {
       z <- compare_control(g,input$control)$anova
@@ -413,14 +592,14 @@ server <- function(input, output, session) {
     }))
   })
   output$diagnostics <- renderTable({
-    req(input$module %in% c("mtt","activity"),isTRUE(input$independent))
+    req(identical(input$module,"mtt"),isTRUE(input$independent))
     validate_provenance(input$experiment_id,input$control_experiment,input$control_source,input$independent)
     do.call(rbind,lapply(split(inference_data(),inference_data()$series),function(g) {
       z <- compare_control(g,input$control)$diagnostics; z$series <- g$series[1]; z
     }))
   })
   output$comparisons <- renderTable({
-    req(input$module %in% c("mtt","activity"),isTRUE(input$independent))
+    req(identical(input$module,"mtt"),isTRUE(input$independent))
     validate_provenance(input$experiment_id,input$control_experiment,input$control_source,input$independent)
     d <- inference_data()
     do.call(rbind,lapply(split(d,d$series),function(g) {
@@ -488,7 +667,7 @@ server <- function(input, output, session) {
       values <- reactiveValuesToList(input)
       colors <- values[grepl("^custom_color_", names(values))]
       jsonlite::write_json(list(schema_version = 1, data = "synthetic",
-        settings = values[intersect(ids, names(values))], colors = colors,
+        settings = values[intersect(ids, names(values))], colors = colors,appearance=appearance(),
         mtt=list(template=input$figure_template,source=input$mtt_source,panels=mtt_styles()),
         analysis=list(threshold_mode=input$threshold_mode,zero_policy=input$zero_policy,model=input$model,model_reason=input$model_reason,experiment=input$experiment_id,control_experiment=input$control_experiment,control_source=input$control_source)),
         file, pretty = TRUE, auto_unbox = TRUE)
@@ -554,7 +733,7 @@ server <- function(input, output, session) {
     }
     if (input$y_scale == "log10") p <- p + scale_y_log10()
     n_groups <- nlevels(d$ldj_group)
-    plot_colors <- palette_ldj(n_groups, input$palette)
+    plot_colors <- ldj_series_colors(appearance(),levels(d$ldj_group))
     if (identical(input$palette, "Personalizada")) {
       plot_colors <- vapply(seq_len(n_groups), function(i) {
         chosen <- input[[paste0("custom_color_", i)]]
@@ -576,6 +755,10 @@ server <- function(input, output, session) {
               linewidth = 0.2, colour = "#DFDFDF") else element_blank(),
             axis.line = element_line(linewidth = 0.5),
             legend.position = if (grouped) input$legend_position else "none")
+    s <- ldj_element_style(appearance())
+    p <- ldj_style_universal(p,appearance())+
+      ldj_plot_theme(s,input$font_size,input$font_family,isTRUE(input$grid_lines))+
+      theme(legend.position=if(grouped) input$legend_position else "none")
     p
   })
 
@@ -594,37 +777,95 @@ server <- function(input, output, session) {
       theme(legend.position=input$legend_position)
     all_data <- visual_data()
     groups <- if(input$group==".none") "Datos" else levels(factor(all_data[[input$group]]))
-    colors <- palette_ldj(length(groups),input$palette)
+    colors <- ldj_series_colors(appearance(),groups)
     if(input$palette=="Personalizada") colors <- vapply(seq_along(groups),function(i) {
       z <- input[[paste0("custom_color_",i)]]
       if(is.null(z)) palette_ldj(length(groups),"Okabe-Ito")[i] else z
     },character(1))
     p <- p + scale_color_manual(values=setNames(colors,groups)) + facet_wrap(~.series)
     if(input$y_scale=="log10") p <- p+scale_y_log10()
+    s <- ldj_element_style(appearance())
+    p <- ldj_style_universal(p,appearance(),".series")+ldj_plot_theme(s,input$font_size,input$font_family)
     p
+  })
+  # Inferential reactive cache is independent of all presentation inputs.
+  fitted_curves <- reactive({
+    analysis()
+    do.call(rbind,lapply(split(mapped(),mapped()$series),function(g) {
+      cv <- fit_response(g,input$model,50,input$threshold_mode,input$control,input$zero_policy)$curve
+      cv$series <- g$series[1]; cv
+    }))
+  })
+  activity_result <- reactive({
+    estimates <- analysis()$table
+    curves <- fitted_curves()
+    d <- visual_data()
+    d$.series_key <- if(input$group==".none") "Datos" else as.character(d[[input$group]])
+    keys <- unique(as.character(estimates$series))
+    validate(need(length(keys)<=4,"El diseño editorial admite hasta cuatro series. Use la vista universal para más series."))
+    rows <- lapply(keys,function(key) {
+      z <- d[!is.na(d$.series_key)&d$.series_key==key & is.finite(d[[input$y]]),,drop=FALSE]
+      inf <- ldj_activity_inference(d[!is.na(d$.series_key)&d$.series_key==key,,drop=FALSE],
+        input$x,input$y,input$activity_control_type,input$experiment_id,input$independent)
+      list(series=key,data=z,inference=inf,fit=list(table=estimates[estimates$series==key,,drop=FALSE],
+        curve=curves[curves$series==key,,drop=FALSE]))
+    })
+    list(rows=rows,x=input$x,y=input$y,unit=input$unit,metric="IC50")
+  })
+  safety_editorial_result <- reactive({
+    validate(need(isTRUE(input$safety_table),"Active Leer parámetros de la tabla."))
+    req(selection_ready())
+    d <- dataset()
+    validate(need(input$group %in% names(d),"Seleccione la columna de grupo."),
+      need(is.numeric(d[[input$x]]),"Seleccione una concentración numérica."))
+    d <- d[is.na(d$parameter)|!nzchar(trimws(d$parameter)),,drop=FALSE]
+    ldj_safety_editorial(analysis()$table,d,input$x,input$y,input$group,input$unit,"M",input$model, NULL)
   })
   final_plot <- reactive({
     if(identical(input$figure_template,"mtt4x2")) return(mtt_result()$figure)
+    if(identical(input$module,"safety") && identical(input$safety_display,"editorial"))
+      return(ldj_safety_editorial_plot(safety_editorial_result(),appearance(),input$safety_unit,input$dispersion,
+        input$plot_title,y_label=input$y_label,cc20_source=input$cc20_source %||% "table",
+        cc20_tolerance=input$cc20_tolerance %||% 10))
+    if(identical(input$module,"safety")) return(ldj_safety_plot(analysis()$table,appearance(),
+      input$safety_unit %||% "uM",input$plot_title,input$font_size,input$font_family,isTRUE(input$grid_lines)))
     req(selection_ready())
-    if(identical(input$module,"safety")) {
-      z <- analysis()$table
-      safety <- ggplot(data.frame(parameter=c("IC50","CC20","CC50"),
-        value=as.numeric(z[1,1:3])),aes(parameter,value)) +
-        geom_point(size=input$point_size,color=palette_ldj(1,input$palette)) +
-        scale_y_log10() + theme_classic(base_size=input$font_size) +
-        labs(title=input$plot_title,x=input$x_label,y="Concentration (M)",caption=input$caption)
-      if(any(visual_data()$.is_control)) return(patchwork::wrap_plots(safety,control_plot(),ncol=1))
-      return(safety)
+    if(identical(input$module,"activity") && isTRUE(input$activity_editorial)) {
+      result <- activity_result()
+      return(ldj_mtt_table_figure(result,list(appearance=appearance(),font_size=input$font_size,
+        font_family=input$font_family,summary_measure=input$dispersion,show_points=input$points,
+        point_size=input$point_size,point_shape=as.integer(input$point_shape),x_scale=input$x_scale,
+        x_label=if(identical(input$x_label,"Concentración (µM)")) paste0("Concentración (",input$unit,")") else input$x_label,
+        y_label=input$y_label,figure_title=input$plot_title,panels=mtt_styles(),grid=isTRUE(input$grid_lines),
+        y_limits=NULL))$figure)
     }
     p <- plot_builder()
     if(!is.null(input$module) && input$module %in% c("mtt","activity") && input$kind=="line") {
-      analysis()
-      curves <- do.call(rbind,lapply(split(mapped(),mapped()$series),function(g) {
-        cv <- fit_response(g,input$model,50,input$threshold_mode,input$control,input$zero_policy)$curve
-        cv$series <- g$series[1]; cv
-      }))
-      p <- p + geom_line(data=curves,aes(x=dose,y=response,color=series,group=series),
-        inherit.aes=FALSE,linewidth=input$line_width,linetype="dashed")
+      curves <- fitted_curves()
+      for(key in unique(curves$series)) {
+        s <- ldj_element_style(appearance(),as.character(key))
+        p <- p + geom_line(data=curves[curves$series==key,,drop=FALSE],aes(x=dose,y=response),
+          inherit.aes=FALSE,color=s$curve,linewidth=s$curve_linewidth %||% input$line_width,
+          linetype=s$curve_linetype %||% "dashed",alpha=s$curve_alpha %||% s$alpha)
+      }
+      if(appearance()$preset=="editorial") {
+        parameters <- analysis()$table
+        parameters <- parameters[parameters$requested_target==50 & is.finite(parameters$estimate) & parameters$estimate>0,,drop=FALSE]
+        descriptions <- character()
+        for(key in unique(parameters$series)) {
+          z <- parameters[parameters$series==key,,drop=FALSE]
+          s <- ldj_element_style(appearance(),as.character(key))
+          z$ldj_group <- key
+          p <- p+geom_hline(data=z,aes(yintercept=target),color=s$reference,linetype="dashed",
+            linewidth=s$reference_linewidth %||% .45)+
+            geom_vline(data=z,aes(xintercept=estimate),color=s$reference,linetype="dashed",
+              linewidth=s$reference_linewidth %||% .45)
+          descriptions <- c(descriptions,paste0(key,": ",if(input$module=="activity") "IC50" else "CC50",
+            " = ",signif(z$estimate,4)," ",z$unit,"; IC95 ",signif(z$lower,4),"–",signif(z$upper,4),
+            if(isTRUE(z$extrapolated)) " (extrapolado)" else ""))
+        }
+        p <- p+labs(caption=paste(c(input$caption,descriptions),collapse="\n"))
+      }
     }
     controls_separate <- (!input$kind%in%c("bar","box") && any(visual_data()$.is_control & is.na(visual_data()[[input$x]]))) || (input$x_scale=="log10" && !input$kind%in%c("bar","box") && any(visual_data()$.is_control))
     if(isTRUE(input$multipanel)) {
@@ -634,6 +875,14 @@ server <- function(input, output, session) {
     }
     if(controls_separate) return(patchwork::wrap_plots(p,control_plot(),ncol=1))
     p
+  })
+  output$activity_audit <- renderPrint({
+    req(identical(input$module,"activity"))
+    d <- visual_data()
+    groups <- if(input$group==".none") list(Datos=d) else split(d,d[[input$group]])
+    rows <- if(isTRUE(input$activity_editorial)) activity_result()$rows else lapply(names(groups),function(key)
+      list(series=key,inference=ldj_activity_inference(groups[[key]],input$x,input$y,input$activity_control_type,input$experiment_id,input$independent)))
+    for(row in rows) {cat(row$series,"·",row$inference$status,"\n"); print(row$inference$audit); if(!is.null(row$inference$dunnett)) print(row$inference$dunnett)}
   })
   output$plot <- renderPlot(final_plot(),res=110)
   output$preview <- renderTable(utils::head(dataset(), 8), rownames = FALSE)
@@ -657,7 +906,7 @@ server <- function(input, output, session) {
     ggplot2::ggsave(
       filename = file, plot = final_plot(), device = format,
       width = input$width, height = input$height,
-      units = "in", dpi = as.integer(input$dpi), bg = "white"
+      units = "in", dpi = as.integer(input$dpi), bg = appearance()$global$background
     )
   }
   output$png <- downloadHandler(filename = function() "LDJ_Prism.png",
@@ -668,4 +917,5 @@ server <- function(input, output, session) {
                                 content = function(file) export_plot(file, "svg"))
 }
 shinyApp(ui, server)
+
 

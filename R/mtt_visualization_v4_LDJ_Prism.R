@@ -292,6 +292,37 @@ ldj_mtt_curve_grid <- function(bundle, drug, n = 300L) {
   data.frame(conc_uM = g, fitted = y)
 }
 
+# Size dose-local rectangles in the coordinates of the displayed axis.
+ldj_dose_band_bounds <- function(dose, width = .65, log = TRUE) {
+  ok <- is.finite(dose) & (!log | dose > 0)
+  coord <- if (log) log10(dose[ok]) else dose[ok]
+  centers <- sort(unique(coord))
+  gaps <- diff(centers)
+  nearest <- if (length(gaps)) pmin(c(Inf, gaps), c(gaps, Inf)) else
+    if (log) .25 else pmax(abs(centers) * .25, .Machine$double.eps)
+  half <- nearest[match(coord, centers)] * min(.95, max(.05, width)) / 2
+  bounds <- data.frame(xmin = rep(NA_real_, length(dose)), xmax = rep(NA_real_, length(dose)))
+  invert <- if (log) function(x) 10^x else identity
+  bounds$xmin[ok] <- invert(coord - half)
+  bounds$xmax[ok] <- invert(coord + half)
+  bounds
+}
+
+ldj_dose_dispersion <- function(dose, response, measure, width = .65, log = TRUE) {
+  valid <- is.finite(dose) & is.finite(response) & (!log | dose > 0)
+  groups <- split(which(valid), dose[valid])
+  sums <- data.frame(dose = numeric(), mean = numeric(), ymin = numeric(), ymax = numeric())
+  if (length(groups)) sums <- do.call(rbind, lapply(groups, function(ix) {
+    v <- dispersion_summary(response[ix], measure)
+    data.frame(dose = dose[ix[1]], mean = v$y, ymin = v$ymin, ymax = v$ymax)
+  }))
+  cbind(sums, ldj_dose_band_bounds(sums$dose, width, log))
+}
+
+ldj_estimable_dispersion <- function(x) {
+  x[is.finite(x$ymin) & is.finite(x$ymax) & x$ymax > x$ymin, , drop = FALSE]
+}
+
 ldj_mtt_make_curve <- function(bundle, drug, tag, config = ldj_mtt_defaults()) {
   ldj_mtt_required_packages()
   cfg <- ldj_mtt_panel(config, tag)
@@ -300,9 +331,8 @@ ldj_mtt_make_curve <- function(bundle, drug, tag, config = ldj_mtt_defaults()) {
   x <- x[x$drug == drug & is.finite(x$conc_uM) & x$conc_uM > 0 &
          is.finite(x$viability), , drop = FALSE]
   sums <- ldj_mtt_summary(x, cfg$summary_measure)
-  sums$xmin <- sums$conc_uM / 1.13
-  sums$xmax <- sums$conc_uM * 1.13
-  sums$ymin <- pmax(0, sums$mean - sums$spread)
+  sums <- cbind(sums, ldj_dose_band_bounds(sums$conc_uM, if (is.null(cfg$band_width)) .65 else cfg$band_width, !identical(cfg$x_scale, "linear")))
+  sums$ymin <- sums$mean - sums$spread
   sums$ymax <- sums$mean + sums$spread
   cv <- ldj_mtt_curve_grid(bundle, drug)
   z <- bundle$cc50
@@ -311,9 +341,9 @@ ldj_mtt_make_curve <- function(bundle, drug, tag, config = ldj_mtt_defaults()) {
   # Draw dose-local SD shading before lines/points, as in the original v4.
   p <- ggplot2::ggplot()
   if (isTRUE(cfg$curve_band)) {
-    p <- p + ggplot2::geom_rect(data = sums,
+    p <- p + ggplot2::geom_rect(data = ldj_estimable_dispersion(sums),
       ggplot2::aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
-      fill = clr, alpha = .15, color = NA, inherit.aes = FALSE)
+      fill = clr, alpha = .24, color = NA, inherit.aes = FALSE)
   }
   p <- p +
     ggplot2::geom_line(data = cv, ggplot2::aes(x = conc_uM, y = fitted),
