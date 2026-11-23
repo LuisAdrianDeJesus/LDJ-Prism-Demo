@@ -261,7 +261,18 @@ ldj_style_universal <- function(p,state,group_column="ldj_group") {
       layers[[length(layers)+1L]] <- z
     }
   }
-  p$layers <- layers;p
+  p$layers <- layers
+  # Styled layers use fixed colours. Train the discrete scale with an invisible
+  # point per observed group so the legend remains meaningful without a second mark.
+  if (!is.null(p$mapping$colour) && group_column %in% names(p$data) &&
+      !is.null(p$scales$get_scales("colour"))) {
+    legend_data <- p$data[!is.na(p$data[[group_column]]) &
+      !duplicated(p$data[[group_column]]), , drop=FALSE]
+    if (nrow(legend_data)) p <- p +
+      ggplot2::geom_point(data=legend_data,alpha=0,na.rm=TRUE,show.legend=TRUE) +
+      ggplot2::guides(colour=ggplot2::guide_legend(override.aes=list(alpha=1)))
+  }
+  p
 }
 
 ldj_color_ui <- function() shiny::tagList(
