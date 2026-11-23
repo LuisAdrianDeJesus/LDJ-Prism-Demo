@@ -84,6 +84,13 @@ tryCatch({
     jsonlite::toJSON(rows,auto_unbox=TRUE)))
   app$wait_for_idle(timeout=60000)
   capture("mtt-manual-grid.png")
+  # Exercise the Posit failure path: a pasted treatment-only table has no control ID columns.
+  treatments <- fixture[c("concentration","response","group","replicate")]
+  treatment_tsv <- paste(capture.output(write.table(treatments,sep="\t",
+    row.names=FALSE,quote=FALSE)),collapse="\n")
+  app$set_inputs(paste_tsv=treatment_tsv)
+  app$click("apply_paste")
+  app$wait_for_js("HTMLWidgets.find('#grid')?.hot?.countCols() === 4",timeout=30000)
   app$click("confirm_table")
   app$set_inputs(module="mtt",mtt_view="editorial",model_reason="Synthetic test")
   app$set_inputs(mtt_target="A")
@@ -101,7 +108,7 @@ tryCatch({
   capture("mtt-manual-invalidated.png")
   app$click("run_analysis")
   app$wait_for_js("Boolean(document.querySelector('#plot img')?.naturalWidth)",timeout=60000)
-  app$set_inputs(inspector="Exportar",width=8,height=12,dpi="300")
+  app$set_inputs(inspector="Exportar",width=8,height=12,dpi="600")
   for(fmt in c("svg","pdf","png")) {
     file <- file.path("test-artifacts",paste0("mtt-manual.",fmt))
     app$get_download(fmt,filename=file)
@@ -109,7 +116,9 @@ tryCatch({
     if(fmt=="svg") {
       svg <- readLines(file,warn=FALSE)
       stopifnot(all(vapply(LETTERS[1:8],function(tag) any(grepl(paste0(">",tag,"[. ]"),svg)),logical(1))),
-        any(grepl("Manual S4",svg,fixed=TRUE)))
+        any(grepl("Manual S4",svg,fixed=TRUE)),
+        any(grepl("CC50",svg,fixed=TRUE)),
+        any(grepl("Sin comparaciones relativas al control",svg,fixed=TRUE)))
     }
   }
   capture("mtt-manual-figure.png")
