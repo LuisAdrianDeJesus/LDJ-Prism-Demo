@@ -12,7 +12,7 @@ tryCatch({
       message("Unexpected Shiny output failure in ",label)
       message(app$get_js("Array.from(document.querySelectorAll('.shiny-output-error')).map(x=>x.textContent).join(' | ')"))
     }
-    stopifnot(identical(errors,0))
+    stopifnot(isTRUE(as.numeric(errors)==0))
     if(expect_image) {
       app$wait_for_js("Boolean(document.querySelector('#plot img')?.naturalWidth>0)",timeout=90000)
     }

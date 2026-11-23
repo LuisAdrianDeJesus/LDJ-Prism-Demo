@@ -682,7 +682,9 @@ server <- function(input, output, session) {
       return(list(table=ldj_safety_results(d,input$group %||% ".none",input$decimal)))
     }
     req(selection_ready())
-    if(!nzchar(trimws(input$model_reason))) stop("Documente la justificación del modelo.")
+    if(!nzchar(trimws(input$model_reason %||% "")))
+      shiny::validate(shiny::need(FALSE,
+        "Antes de ajustar la curva, abra Análisis, justifique el modelo 3PL/4PL y pulse Ejecutar análisis."))
     if(identical(input$threshold_mode,"control")) inference_data()
     d <- mapped()
     groups <- split(d,d$series)
@@ -1023,6 +1025,11 @@ server <- function(input, output, session) {
   output$plot <- renderPlot(final_plot(),res=110)
   output$preview <- renderTable(utils::head(dataset(), 8), rownames = FALSE)
   output$status <- renderUI({
+    if(identical(input$module,"safety") && !isTRUE(input$safety_table)) {
+      supplied <- c(input$ic50_value,input$cc20_value,input$cc50_value)
+      if(!any(is.finite(supplied) & supplied>0)) return(p(class="help-note",
+        "Todavía no hay parámetros de potencia y seguridad. Introduzca IC50, CC20 y CC50 en Análisis o importe una tabla de parámetros. ND significa no disponible, no cero."))
+    }
     if(identical(figure_template(),"mtt4x2")) return(p(class="help-note",
       paste("MTT · ocho paneles A–H ·",if(isTRUE(mtt_bundle()$synthetic)) "DEMO sintética" else "bundle privado",
         "· los cambios de estilo conservan estimaciones y controles.")))
