@@ -437,12 +437,14 @@ server <- function(input, output, session) {
   dataset <- reactive(working())
   # Only the explicitly synthetic bundled fixture may auto-document an example fit.
   # Imported/manual data still require an independent model justification.
-  observeEvent(input$module, {
-    if(identical(input$module,"activity") &&
-       identical(isolate(dataset()),demo_data) &&
-       !nzchar(trimws(isolate(input$model_reason) %||% ""))) {
-      updateTextInput(session,"model_reason",
-        value="Demostración sintética: ajuste 4PL para ilustrar la interfaz; revise la adecuación del modelo antes de usar datos experimentales.")
+  demo_reason <- "Demostración sintética: ajuste 4PL para ilustrar la interfaz; revise la adecuación del modelo antes de usar datos experimentales."
+  observeEvent(list(input$module, dataset()), {
+    reason <- isolate(input$model_reason) %||% ""
+    bundled <- identical(dataset(), demo_data)
+    if (identical(input$module, "activity") && bundled && !nzchar(trimws(reason))) {
+      updateTextInput(session, "model_reason", value=demo_reason)
+    } else if (!bundled && identical(reason, demo_reason)) {
+      updateTextInput(session, "model_reason", value="")
     }
   },ignoreInit=TRUE)
   observations <- reactive({
@@ -692,7 +694,8 @@ server <- function(input, output, session) {
       return(list(table=ldj_safety_results(d,input$group %||% ".none",input$decimal)))
     }
     req(selection_ready())
-    if(!nzchar(trimws(input$model_reason %||% "")))
+    reason <- trimws(input$model_reason %||% "")
+    if(!nzchar(reason) || (identical(reason,demo_reason) && !identical(dataset(),demo_data)))
       shiny::validate(shiny::need(FALSE,
         "Antes de ajustar la curva, abra Análisis, justifique el modelo 3PL/4PL y pulse Ejecutar análisis."))
     if(identical(input$threshold_mode,"control")) inference_data()

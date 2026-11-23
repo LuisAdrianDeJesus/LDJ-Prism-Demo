@@ -22,6 +22,11 @@ tryCatch({
   app$set_inputs(module="activity",inspector="Gráfica")
   check_render("Activity automatically displays the bundled synthetic example")
   stopifnot(grepl("Demostración sintética", app$get_value(input="model_reason"),fixed=TRUE))
+  app$set_inputs(inspector="Datos",entry_type="observations")
+  app$click("blank_table")
+  app$wait_for_js("document.querySelector('#model_reason').value === ''",timeout=30000)
+  app$click("load_example")
+  app$wait_for_js("document.querySelector('#model_reason').value.includes('Demostración sintética')",timeout=30000)
   # Now supply an explicit model reason and check the full activity figure.
   app$set_inputs(inspector="Análisis",model_reason="Synthetic QA: concentration-response model")
   app$click("run_analysis")
