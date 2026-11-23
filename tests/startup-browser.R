@@ -134,8 +134,14 @@ tryCatch({
   mixed <- data.frame(concentration=fixture$concentration,response=fixture$response,
     group=fixture$group,replicate=fixture$replicate,parameter="",estimate=NA_real_,unit="")
   mixed$response[1] <- 90
-  parameters <- data.frame(concentration=NA_real_,response=NA_real_,
-    group=paste0("Manual S",1:4),replicate=NA_real_,parameter="IC50",estimate=1:4,unit="uM")
+  mixed$lower <- mixed$upper <- NA_real_
+  parameters <- expand.grid(group=paste0("Manual S",1:4),parameter=c("IC50","CC20","CC50"),
+    stringsAsFactors=FALSE,KEEP.OUT.ATTRS=FALSE)
+  parameters$concentration <- parameters$response <- parameters$replicate <- NA_real_
+  parameters$estimate <- rep(c(1,.1,8),each=4)
+  parameters$unit <- "uM"
+  parameters$lower <- .8*parameters$estimate
+  parameters$upper <- 1.2*parameters$estimate
   tsv <- paste(capture.output(write.table(rbind(mixed,parameters),sep="\t",row.names=FALSE,quote=FALSE,na="")),collapse="\n")
   app$set_inputs(paste_tsv=tsv)
   app$click("apply_paste")
@@ -145,9 +151,22 @@ tryCatch({
   app$click("run_analysis")
   app$wait_for_js("Boolean(document.querySelector('#plot img')?.naturalWidth)",timeout=60000)
   app$set_inputs(inspector="Exportar")
-  file <- file.path("test-artifacts","manual-safety.svg")
-  app$get_download("svg",filename=file)
-  stopifnot(any(grepl("Manual S4",readLines(file,warn=FALSE),fixed=TRUE)))
+  for(source in c("regression","table","both")) {
+    app$set_inputs(cc20_source=source)
+    file <- file.path("test-artifacts",paste0("safety-",source,".svg"))
+    app$get_download("svg",filename=file)
+    svg <- paste(readLines(file,warn=FALSE),collapse=" ")
+    stopifnot(grepl("Manual S4",svg,fixed=TRUE),
+      grepl("CC20 · Ajuste",svg,fixed=TRUE)==(source!="table"),
+      grepl("CC20 · Tabla",svg,fixed=TRUE)==(source!="regression"))
+    if(source=="both") stopifnot(grepl("Discrepancia:",svg,fixed=TRUE),
+      grepl("Advertencia: CC20 &lt; IC50",svg,fixed=TRUE))
+  }
+  for(fmt in c("pdf","png")) {
+    file <- file.path("test-artifacts",paste0("safety-both.",fmt))
+    app$get_download(fmt,filename=file)
+    stopifnot(file.info(file)$size>10000)
+  }
   app$set_inputs(inspector="Datos",module="mtt",unit="nM")
   app$click("load_example")
   app$wait_for_idle()
