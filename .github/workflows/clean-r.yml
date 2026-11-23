@@ -1,14 +1,14 @@
 name: Clean Linux R 4.6.0 deployment
 on:
   push:
-    branches: [demo, 'fix/module-navigation-manual-data', 'fix/posit-module-runtime-qa', 'fix/mtt-empty-control-map']
+    branches: [demo, 'fix/module-navigation-manual-data', 'fix/posit-module-runtime-qa', 'fix/mtt-empty-control-map', 'feature/mtt-anova-dunnett-editorial']
     paths: ['manifest.json', 'app.R', 'R/**', 'tests/**', '.github/workflows/clean-r.yml']
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   verify:
-    if: github.ref == 'refs/heads/demo' || github.ref == 'refs/heads/fix/module-navigation-manual-data' || github.ref == 'refs/heads/fix/posit-module-runtime-qa' || github.ref == 'refs/heads/fix/mtt-empty-control-map'
+    if: github.ref == 'refs/heads/demo' || github.ref == 'refs/heads/fix/module-navigation-manual-data' || github.ref == 'refs/heads/fix/posit-module-runtime-qa' || github.ref == 'refs/heads/fix/mtt-empty-control-map' || github.ref == 'refs/heads/feature/mtt-anova-dunnett-editorial'
     runs-on: ubuntu-22.04
     env:
       RENV_CONFIG_CACHE_ENABLED: 'FALSE'
@@ -75,6 +75,7 @@ jobs:
           Rscript tests/unit.R
           Rscript tests/smoke.R
           Rscript tests/mtt-editorial.R
+          Rscript tests/mtt-inference.R
       - name: Chromium first-load and figure export tests
         run: |
           Rscript tests/startup-browser.R

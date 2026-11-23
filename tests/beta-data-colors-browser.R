@@ -13,7 +13,7 @@ tryCatch({
   app$wait_for_js("HTMLWidgets.find('#grid')?.hot?.countRows()===2",timeout=30000)
   app$run_js("HTMLWidgets.find('#grid').hot.alter('remove_row',1,1)")
   app$wait_for_js("HTMLWidgets.find('#grid')?.hot?.countRows()===1",timeout=30000)
-  app$set_inputs(column_names="dose,response,group,replicate,control_type,observation_id,experiment_id,control_source,inference_eligible")
+  app$set_inputs(column_names="dose,response,group,replicate,control_type,observation_id,experiment_id,control_source,inference_eligible,independent_unit_id")
   app$click("rename_columns")
   app$wait_for_js("HTMLWidgets.find('#grid')?.hot?.getColHeader(0)==='dose'",timeout=30000)
   fixture <- data.frame(dose=c(1,2),response=c(85,60),group=c("QA-a","QA-b"))

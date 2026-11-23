@@ -106,7 +106,11 @@ tags$details(tags$summary("Asignar controles por serie y experimento"),
   actionButton("mtt_control_apply","Guardar asignaciones de controles"),
   textOutput("mtt_control_status")),
 actionButton("mtt_run","Ejecutar análisis de la tabla"),
-textOutput("mtt_run_status")),
+textOutput("mtt_run_status"),
+selectInput("mtt_inference","Análisis estadístico",c("ANOVA de una vía + Dunnett contra control"="anova","Solo análisis descriptivo"="descriptive")),
+selectInput("mtt_reference","Control de referencia",c("No tratado"="untreated","Vehículo"="vehicle","Negativo"="negative","Positivo"="positive","Infectado sin tratamiento"="infected_untreated")),
+verbatimTextOutput("mtt_inference_report"),
+downloadButton("mtt_statistics","Descargar resultados MTT (JSON)")),
 actionButton("run_analysis","Ejecutar análisis"),
 textOutput("workflow_status"),
 textInput("control_label_default", "Etiqueta del control", "No tratado"),
@@ -157,6 +161,11 @@ actionButton("apply_preset", "Aplicar preset"), helpText("Propuestas de estilo; 
 tabPanel("MTT 4×2",
 p("Las opciones gráficas no recalculan modelos ni comparaciones. La demo usa resultados calculados exclusivamente de datos sintéticos."),
 selectInput("mtt_target","Aplicar estilo a",c("Todos los paneles"="all",LETTERS[1:8])),
+checkboxInput("mtt_significance","Mostrar significancia",TRUE),
+checkboxInput("mtt_anova_summary","Mostrar resumen ANOVA",TRUE),
+checkboxInput("mtt_show_ns","Mostrar ns",TRUE),
+numericInput("mtt_mark_size","Tamaño de significancia",3,min=1,max=8,step=.5),
+numericInput("mtt_mark_offset","Separación de significancia",.07,min=.02,max=.25,step=.01),
 textInput("mtt_title","Título del panel (vacío: automático)",""),
 textInput("mtt_x","Eje X (vacío: global)",""),
 textInput("mtt_y","Eje Y (vacío: global)",""),
@@ -275,6 +284,7 @@ server <- function(input, output, session) {
   analysis_signature <- reactive(serialize(list(data=dataset(),control_map=mtt_control_map(),x=input$x,y=input$y,
     group=input$group,series=lapply(1:4,function(i) input[[paste0("mtt_series_",i)]]),
     unit=input$unit,model=input$model,reason=input$model_reason,
+    mtt_inference=input$mtt_inference,mtt_reference=input$mtt_reference,
     threshold=input$threshold_mode,zero=input$zero_policy,
     control=input$control,control_type=input$control_type_default,
     experiment=input$experiment_id,control_experiment=input$control_experiment,
@@ -297,7 +307,9 @@ server <- function(input, output, session) {
       incoming <- ldj_mtt_normalize_numeric(incoming,
         if(is.null(input$decimal)) "." else input$decimal)
       result <- ldj_mtt_analyze_table(incoming,input$x,input$y,input$group,
-        series,input$unit,input$model,control_assignments=mtt_control_map())
+        series,input$unit,input$model,control_assignments=mtt_control_map(),
+        inference=identical(input$mtt_inference,"anova"),reference=input$mtt_reference %||% "untreated",
+        independent=input$independent)
       table_result(result)
       table_snapshot(analysis_signature())
     },error=function(e) showNotification(conditionMessage(e),type="error",duration=NULL))
@@ -395,7 +407,9 @@ server <- function(input, output, session) {
       font_size=input$font_size,font_family=input$font_family,show_points=input$points,
       point_shape=as.integer(input$point_shape),point_size=input$point_size,
       summary_measure=input$dispersion,x_scale=input$x_scale,panels=mtt_styles(),
-      plot_width=input$width,plot_height=input$height,dpi=as.integer(input$dpi),appearance=appearance())
+      plot_width=input$width,plot_height=input$height,dpi=as.integer(input$dpi),appearance=appearance(),
+      show_significance=input$mtt_significance,show_anova=input$mtt_anova_summary,show_ns=input$mtt_show_ns,
+      significance_offset=input$mtt_mark_offset,significance_size=input$mtt_mark_size)
     if(isTRUE(b$synthetic)) {
       cfg$short <- stats::setNames(paste("Ejemplo",LETTERS[1:4]),ldj_mtt_defaults()$order)
       cfg$label_significance <- FALSE
@@ -412,6 +426,13 @@ server <- function(input, output, session) {
     }
     ldj_mtt_editor_build(b,cfg)
   })
+  current_mtt_report <- reactive({
+    req(table_result(),identical(table_snapshot(),analysis_signature()))
+    ldj_mtt_inference_report(table_result())
+  })
+  output$mtt_inference_report <- renderPrint(print(current_mtt_report()))
+  output$mtt_statistics <- downloadHandler(filename=function() "LDJ-Prism-MTT-estadistica.json",
+    content=function(file) jsonlite::write_json(current_mtt_report(),file,pretty=TRUE,auto_unbox=TRUE))
   output$mtt_audit <- renderPrint({
     req(figure_template()=="mtt4x2")
     z <- mtt_result()$audit
@@ -460,7 +481,7 @@ server <- function(input, output, session) {
     d <- if(identical(input$entry_type,"parameters"))
       data.frame(group="",parameter="",estimate="",lower="",upper="",unit="")
     else data.frame(concentration="",response="",group="",replicate="",control_type="",
-      observation_id="",experiment_id="",control_source="",inference_eligible="")
+      observation_id="",experiment_id="",control_source="",inference_eligible="",independent_unit_id="")
     source_data(d)
     working(d)
     manual(TRUE)

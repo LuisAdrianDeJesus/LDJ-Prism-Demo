@@ -21,8 +21,11 @@ ldj_mtt_display_unit <- function(result, unit) {
     d[[out$x]] <- ldj_convert_concentration(d[[out$x]], result$unit, unit)
     if (".category" %in% names(d) && ".is_control" %in% names(d)) {
       category <- as.character(d$.category)
+      original_category <- category
       doses <- !d$.is_control
       category[doses] <- format(d[[out$x]][doses], scientific=FALSE, trim=TRUE, digits=8)
+      marks <- out$rows[[i]]$inference$labels
+      if(!is.null(marks)) out$rows[[i]]$inference$labels$category <- category[match(marks$category,original_category)]
       d$.category <- factor(category, levels=unique(c(category[!doses], category[doses])))
     }
     out$rows[[i]]$data <- d
@@ -40,8 +43,35 @@ ldj_mtt_display_unit <- function(result, unit) {
   out
 }
 
+ldj_mtt_inference <- function(d,x,y,type="untreated",confirmed=FALSE) {
+  unavailable <- function(reason) list(status=paste("Inferencia no disponible:",reason))
+  if(!any(d$.is_control & d$.control_type==type))
+    return(unavailable(paste("No hay control",type,"asignado a la serie.")))
+  if(!"experiment_id" %in% names(d))
+    return(unavailable("Falta experiment_id."))
+  experiments <- d$experiment_id[!d$.is_control]
+  if(anyNA(experiments) || any(!nzchar(trimws(experiments))) || length(unique(experiments))!=1L)
+    return(unavailable("Se requiere un experimento por serie. Separe experimentos o especifique un diseño por bloques."))
+  out <- ldj_activity_inference(d,x,y,type,unique(experiments),confirmed)
+  if(is.null(out$labels)) return(unavailable(sub("^Inferencia ND: ","",out$status)))
+  included <- d[!d$.is_control | (d$.control_type==type & d$experiment_id==unique(experiments)),,drop=FALSE]
+  included <- included[!is.na(included$experiment_id),,drop=FALSE]
+  out$audit$control_source <- unique(included$control_source[included$.is_control])
+  out$audit$n <- table(as.character(included$.category))
+  out$dunnett$category <- out$labels$category
+  out$dunnett$significance <- out$labels$label
+  out
+}
+
+ldj_mtt_inference_report <- function(result) {
+  setNames(lapply(result$rows,function(row) {
+    row$inference %||% list(status="Solo análisis descriptivo.")
+  }),vapply(result$rows,function(row) row$series,character(1)))
+}
+
 ldj_mtt_analyze_table <- function(data, x, y, group, series, unit,
-                                  model="4PL", control_assignments=NULL) {
+                                  model="4PL", control_assignments=NULL,
+                                  inference=FALSE, reference="untreated", independent=FALSE) {
   if (!all(c(x, y, group) %in% names(data))) stop("Seleccione columnas X, Y y serie existentes.")
   if (!is.numeric(data[[x]]) || !is.numeric(data[[y]]))
     stop("Las columnas de dosis y respuesta deben ser numéricas.")
@@ -101,14 +131,16 @@ ldj_mtt_analyze_table <- function(data, x, y, group, series, unit,
       stop("Datos insuficientes en ", s, ": mínimo ocho observaciones y cinco dosis positivas distintas.")
     mapped <- data.frame(dose=treatment[[x]], response=treatment[[y]], series=s)
     fit <- fit_response(mapped, model, 50, "absolute", 0, "exclude")
-    list(data=d, fit=fit, series=s)
+    list(data=d, fit=fit, series=s, inference=if(isTRUE(inference))
+      ldj_mtt_inference(d,x,y,reference,independent) else NULL)
   })
   list(rows=rows, unit="uM", input_unit=unit, x=x, y=y, physical=physical,
        control_assignments=control_assignments,
        audit=list(synthetic=FALSE, shared_physical_n=sum(physical$.is_control),
          shared_visual_n=sum(visual$.is_control),
          eligible_controls=sum(physical$.is_control & physical$.eligible),
-         inference="Absolute-response fits only; controls descriptive, not used for inferential contrasts"))
+         inference=if(isTRUE(inference)) vapply(rows,function(row) row$inference$status,character(1)) else
+           "Ajustes absolutos; controles descriptivos."))
 }
 ldj_mtt_table_figure <- function(result,config=list()) {
   cfg <- ldj_mtt_style(config); plots <- list()
@@ -141,16 +173,18 @@ ldj_mtt_table_figure <- function(result,config=list()) {
       if(!is.null(result$metric)) p <- p+ggplot2::scale_x_discrete(labels=function(labels)
         vapply(labels,function(label) paste(strwrap(label,width=20),collapse="\n"),character(1)))
       if(!is.null(row$inference)) {
-        p <- p+ggplot2::labs(subtitle=paste(strwrap(row$inference$status,width=56),collapse="\n"))
-        if(!is.null(row$inference$labels)) {
+        if(!identical(config$show_anova,FALSE) || is.null(row$inference$labels))
+          p <- p+ggplot2::labs(subtitle=paste(strwrap(row$inference$status,width=56),collapse="\n"))
+        if(!is.null(row$inference$labels) && !identical(config$show_significance,FALSE)) {
           marks <- row$inference$labels
+          if(identical(config$show_ns,FALSE)) marks <- marks[marks$label!="ns",,drop=FALSE]
           span <- max(diff(range(d[[result$y]],finite=TRUE)),1)
           marks$height <- vapply(marks$category,function(k) {
             v <- d[[result$y]][as.character(d$.category)==k]
-            max(c(v,dispersion_summary(v,pc$summary_measure)$ymax),na.rm=TRUE)+.07*span
+            max(c(v,dispersion_summary(v,pc$summary_measure)$ymax),na.rm=TRUE)+(config$significance_offset %||% .07)*span
           },numeric(1))
           p <- p+ggplot2::geom_text(data=marks,ggplot2::aes(category,height,label=label),inherit.aes=FALSE,
-            colour=s$significance,alpha=s$significance_alpha %||% 1,fontface="bold",size=3)
+            colour=s$significance,alpha=s$significance_alpha %||% 1,fontface="bold",size=config$significance_size %||% 3)
         }
       }
     } else {
@@ -199,13 +233,15 @@ ldj_mtt_table_figure <- function(result,config=list()) {
       x=if(is.null(pc$x_label)) paste("Concentración",result$unit) else pc$x_label,
       y=if(is.null(pc$y_label)) result$y else pc$y_label,caption=pc$annotation)+
       ggplot2::theme(axis.text.x=ggplot2::element_text(angle=35,hjust=1),plot.margin=ggplot2::margin(12,16,28,20))
-    p <- p+ggplot2::coord_cartesian(ylim=if(is.null(result$metric)) pc$y_limits else config$panels[[tag]]$y_limits,xlim=if(j==2) pc$x_limits else NULL)
+    p <- p+ggplot2::coord_cartesian(ylim=if(j==1 && !is.null(row$inference$labels) && !identical(config$show_significance,FALSE) && nrow(marks) && !is.null(pc$y_limits))
+      c(pc$y_limits[1],max(pc$y_limits[2],marks$height+.07*span)) else if(is.null(result$metric)) pc$y_limits else config$panels[[tag]]$y_limits,xlim=if(j==2) pc$x_limits else NULL)
     plots[[tag]] <- p
   }
   cfg$appearance <- appearance
   list(figure=patchwork::wrap_plots(plots,ncol=2,nrow=length(result$rows))+patchwork::plot_annotation(title=config$figure_title,
     caption=if(!is.null(result$metric)) paste("Medias ±",cfg$summary_measure,"· Las sombras indican dispersión observada de la media, no incertidumbre del ajuste.") else paste0("Medias ± ",cfg$summary_measure," · Sombras de dispersión observada. Ajustes absolutos; controles descriptivos. ",
-      "Sin comparaciones relativas al control. Unidad: ",result$unit),
+      if(any(vapply(result$rows,function(row) !is.null(row$inference$labels),logical(1))))
+        "Contrastes Dunnett solo en series elegibles; ajuste por serie. Unidad: " else "Sin comparaciones relativas al control. Unidad: ",result$unit),
     theme=ldj_plot_theme(ldj_element_style(appearance),cfg$font_size,cfg$font_family)),
     panels=plots,config=cfg,audit=result$audit)
 }
