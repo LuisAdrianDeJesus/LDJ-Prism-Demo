@@ -12,5 +12,8 @@ style <- list(schema="ldj-style",version=2,appearance=ldj_appearance(),
   settings=list(axis_y_mode="manual",axis_y_min=0,axis_y_max=90,width=8.35,height=10.45))
 stopifnot(identical(ldj_validate_style(style)$settings,style$settings),
   identical(ldj_validate_style(style$appearance)$appearance,ldj_validate_colors(style$appearance)))
+bad <- style
+bad$settings$axis_y_max <- -1
+stopifnot(inherits(try(ldj_validate_style(bad),silent=TRUE),"try-error"))
 style$settings$model <- "3PL"
 stopifnot(inherits(try(ldj_validate_style(style),silent=TRUE),"try-error"))

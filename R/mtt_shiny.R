@@ -183,9 +183,14 @@ ldj_mtt_table_figure <- function(result,config=list()) {
     if(!is.null(result$metric)) {
       d <- d[d$.is_control | (is.finite(d[[result$x]]) & d[[result$x]]>0),,drop=FALSE]
       reference <- config$reference_control %||% "infected_untreated"
-      if(identical(config$show_other_controls,FALSE))
-        d <- d[!d$.is_control | d$.control_type==reference,,drop=FALSE]
-      display_order <- order(!d$.is_control, d$.is_control & d$.control_type!=reference,
+      chosen <- if(startsWith(reference,"physical:")) ldj_control_reference_keys(d) %in% reference else
+        d$.control_type==reference
+      if(identical(config$show_other_controls,FALSE)) {
+        keep <- !d$.is_control | chosen
+        d <- d[keep,,drop=FALSE]
+        chosen <- chosen[keep]
+      }
+      display_order <- order(!d$.is_control, d$.is_control & !chosen,
         d[[result$x]], na.last=TRUE)
       d$.category <- factor(as.character(d$.category),levels=unique(as.character(d$.category[display_order])))
     }
