@@ -41,6 +41,44 @@ demo_data <- local({
   rbind(d,controls[,names(d)])
 })
 
+# Formula-generated teaching examples. No experimental input is used.
+editorial_example <- function(module) {
+  activity <- identical(module,"activity")
+  d <- expand.grid(Concentracion_uM=c(.025,.08,.25,.8,2.5,8,25),
+    Replica=1:3,Compuesto=paste("Serie sintética",LETTERS[1:4]),
+    KEEP.OUT.ATTRS=FALSE,stringsAsFactors=FALSE)
+  midpoint <- c(.55,1.8,4.4,7)[match(d$Compuesto,unique(d$Compuesto))]
+  d$Viabilidad_pct <- 5+95/(1+(d$Concentracion_uM/midpoint)^1.35)+
+    c(-1.8,.2,1.6)[d$Replica]*rep(c(.7,1.1,1.8),length.out=nrow(d))
+  d$control_type <- "treatment"
+  d$observation_id <- paste0(module,"-T",seq_len(nrow(d)))
+  d$independent_unit_id <- d$observation_id
+  d$experiment_id <- paste0("SYNTHETIC-",toupper(module))
+  d$control_source <- "Generador sintético LDJ"
+  d$inference_eligible <- TRUE
+  if(activity) {
+    ctrl <- d[seq_len(12),]
+    ctrl$Compuesto <- rep(unique(d$Compuesto),each=3)
+    ctrl$Concentracion_uM <- NA_real_
+    ctrl$Viabilidad_pct <- rep(c(96,99,101),4)
+    ctrl$control_type <- "infected_untreated"
+    ctrl$observation_id <- paste0("activity-C",seq_len(nrow(ctrl)))
+    ctrl$independent_unit_id <- ctrl$observation_id
+    d <- rbind(d,ctrl)
+    return(d)
+  }
+  z <- d[seq_len(12),]
+  z$Compuesto <- rep(unique(d$Compuesto),each=3)
+  z$parameter <- rep(c("IC50","CC20","CC50"),4)
+  z$unit <- rep(c("uM","uM","nM","uM"),each=3)
+  z$estimate <- c(.035,.32,.57, .38,.78,1.8, 105,1720,4430, 5,2,7.2)
+  z$lower <- z$upper <- NA_real_
+  z$Concentracion_uM <- z$Viabilidad_pct <- NA_real_
+  d$parameter <- d$unit <- NA_character_
+  d$estimate <- d$lower <- d$upper <- NA_real_
+  rbind(d,z)
+}
+
 palette_ldj <- function(n, palette) {
   if (palette == "Viridis") return(grDevices::hcl.colors(n, "viridis"))
   if (palette == "Grises") return(grDevices::gray.colors(n, start = 0.15, end = 0.7))
@@ -152,7 +190,8 @@ selectInput("ic_unit", "Unidad IC50", c("uM","nM","mM","M")),
 selectInput("cc_unit", "Unidad CC20/CC50", c("uM","nM","mM","M"))),
 conditionalPanel("input.module === 'activity'",
 selectInput("activity_control_type","Control inferencial de actividad",c("Infectado sin tratamiento"="infected_untreated","Células sanas sin tratamiento"="untreated","Vehículo"="vehicle","Negativo"="negative","Positivo"="positive")),
-checkboxInput("activity_editorial","Actividad: pares editoriales por serie (hasta 4)",TRUE)),
+checkboxInput("activity_editorial","Actividad: pares editoriales por serie (hasta 4)",TRUE),
+checkboxInput("activity_other_controls","Mostrar otros controles experimentales",TRUE)),
 ),
 tabPanel("Gráfica",
 selectInput("kind", "Tipo de gráfica",
@@ -477,6 +516,7 @@ server <- function(input, output, session) {
         plotOutput("plot",height="100%",width="100%")))
   })
 
+  example_module <- reactiveVal(NULL)
   source_data <- reactiveVal(demo_data)
   working <- reactiveVal(demo_data)
   dataset <- reactive(working())
@@ -485,7 +525,8 @@ server <- function(input, output, session) {
   demo_reason <- "Demostración sintética: ajuste 4PL para ilustrar la interfaz; revise la adecuación del modelo antes de usar datos experimentales."
   observeEvent(list(input$module, dataset()), {
     reason <- isolate(input$model_reason) %||% ""
-    bundled <- identical(dataset(), demo_data)
+    bundled <- identical(dataset(), demo_data) ||
+      (identical(example_module(),"activity") && identical(dataset(),editorial_example("activity")))
     if (identical(input$module, "activity") && bundled && !nzchar(trimws(reason))) {
       updateTextInput(session, "model_reason", value=demo_reason)
     } else if (!bundled && identical(reason, demo_reason)) {
@@ -519,8 +560,12 @@ server <- function(input, output, session) {
     }
   })
   observeEvent(input$load_example, {
-    source_data(demo_data)
-    working(demo_data)
+    key <- isolate(input$module)
+    specialized <- key %in% c("activity","safety")
+    d <- if(specialized) editorial_example(key) else demo_data
+    example_module(if(specialized) key else NULL)
+    source_data(d)
+    working(d)
     manual(FALSE)
     draft_pending(FALSE)
     manual_snapshot(NULL)
@@ -533,7 +578,17 @@ server <- function(input, output, session) {
     updateSelectInput(session,"unit",selected="uM")
     updateSelectInput(session,"mtt_source",selected="synthetic")
     updateCheckboxInput(session,"mtt_user_data",value=FALSE)
-    updateCheckboxInput(session,"safety_table",value=FALSE)
+    updateCheckboxInput(session,"safety_table",value=identical(key,"safety"))
+    if(identical(key,"safety")) {
+      updateSelectInput(session,"safety_display",selected="editorial")
+      updateTextInput(session,"y_label",value="Viabilidad celular (%)")
+    }
+    if(identical(key,"activity")) {
+      updateCheckboxInput(session,"activity_editorial",value=TRUE)
+      updateSelectInput(session,"activity_control_type",selected="infected_untreated")
+      updateTextInput(session,"y_label",value="Células infectadas (%)")
+      updateTextInput(session,"model_reason",value=demo_reason)
+    }
   })
   confirm_grid <- function() {
     d <- ldj_mtt_normalize_numeric(grid_data(),input$decimal %||% ".")
@@ -740,7 +795,8 @@ server <- function(input, output, session) {
     }
     req(selection_ready())
     reason <- trimws(input$model_reason %||% "")
-    if(!nzchar(reason) || (identical(reason,demo_reason) && !identical(dataset(),demo_data)))
+    teaching_example <- identical(example_module(),"activity") && identical(dataset(),editorial_example("activity"))
+    if(!nzchar(reason) || (identical(reason,demo_reason) && !identical(dataset(),demo_data) && !teaching_example))
       shiny::validate(shiny::need(FALSE,
         "Antes de ajustar la curva, abra Análisis, justifique el modelo 3PL/4PL y pulse Ejecutar análisis."))
     if(identical(input$threshold_mode,"control")) inference_data()
@@ -998,10 +1054,13 @@ server <- function(input, output, session) {
     d$.series_key <- if(input$group==".none") "Datos" else as.character(d[[input$group]])
     keys <- unique(as.character(estimates$series))
     validate(need(length(keys)<=4,"El diseño editorial admite hasta cuatro series. Use la vista universal para más series."))
+    teaching_example <- identical(example_module(),"activity") && identical(dataset(),editorial_example("activity"))
+    experiment <- if(teaching_example) "SYNTHETIC-ACTIVITY" else input$experiment_id
+    confirmed <- teaching_example || isTRUE(input$independent)
     rows <- lapply(keys,function(key) {
       z <- d[!is.na(d$.series_key)&d$.series_key==key & is.finite(d[[input$y]]),,drop=FALSE]
       inf <- ldj_activity_inference(d[!is.na(d$.series_key)&d$.series_key==key,,drop=FALSE],
-        input$x,input$y,input$activity_control_type,input$experiment_id,input$independent)
+        input$x,input$y,input$activity_control_type,experiment,confirmed)
       list(series=key,data=z,inference=inf,fit=list(table=estimates[estimates$series==key,,drop=FALSE],
         curve=curves[curves$series==key,,drop=FALSE]))
     })
@@ -1032,6 +1091,10 @@ server <- function(input, output, session) {
       return(ldj_mtt_table_figure(result,list(appearance=appearance(),font_size=input$font_size,
         font_family=input$font_family,summary_measure=input$dispersion,show_points=input$points,
         point_size=input$point_size,point_shape=as.integer(input$point_shape),x_scale=input$x_scale,
+        reference_control=input$activity_control_type,show_other_controls=isTRUE(input$activity_other_controls),
+        show_significance=isTRUE(input$mtt_significance),show_anova=isTRUE(input$mtt_anova_summary),
+        show_ns=isTRUE(input$mtt_show_ns),significance_size=input$mtt_mark_size,
+        significance_offset=input$mtt_mark_offset,
         x_label=if(identical(input$x_label,"Concentración (µM)")) paste0("Concentración (",input$unit,")") else input$x_label,
         y_label=input$y_label,figure_title=input$plot_title,panels=mtt_styles(),grid=isTRUE(input$grid_lines),
         y_limits=NULL))$figure)
@@ -1079,7 +1142,7 @@ server <- function(input, output, session) {
     groups <- if(input$group==".none") list(Datos=d) else split(d,d[[input$group]])
     rows <- if(isTRUE(input$activity_editorial)) activity_result()$rows else lapply(names(groups),function(key)
       list(series=key,inference=ldj_activity_inference(groups[[key]],input$x,input$y,input$activity_control_type,input$experiment_id,input$independent)))
-    for(row in rows) {cat(row$series,"·",row$inference$status,"\n"); print(row$inference$audit); if(!is.null(row$inference$dunnett)) print(row$inference$dunnett)}
+    for(row in rows) {cat(row$series,"·",row$inference$status,"\n"); print(row$inference$audit); if(!is.null(row$inference$diagnostics)) print(row$inference$diagnostics); if(!is.null(row$inference$dunnett)) print(row$inference$dunnett)}
   })
   output$plot <- renderPlot(final_plot(),res=110)
   output$preview <- renderTable(utils::head(dataset(), 8), rownames = FALSE)

@@ -174,13 +174,20 @@ ldj_mtt_table_figure <- function(result,config=list()) {
     row <- result$rows[[i]]; d <- row$data
     if(!is.null(result$metric)) {
       d <- d[d$.is_control | (is.finite(d[[result$x]]) & d[[result$x]]>0),,drop=FALSE]
-      display_order <- order(!d$.is_control, d[[result$x]], na.last=TRUE)
+      reference <- config$reference_control %||% "infected_untreated"
+      if(identical(config$show_other_controls,FALSE))
+        d <- d[!d$.is_control | d$.control_type==reference,,drop=FALSE]
+      display_order <- order(!d$.is_control, d$.is_control & d$.control_type!=reference,
+        d[[result$x]], na.last=TRUE)
       d$.category <- factor(as.character(d$.category),levels=unique(as.character(d$.category[display_order])))
     }
     color <- if(!is.null(pc$color)) pc$color else unname(cfg$palette[c("DTG","Letermovir","CDQ","Lopinavir")][i])
     if(!is.null(config$appearance) && is.null(pc$color)) color <- unname(ldj_series_colors(appearance,row$series)[1])
     s <- ldj_element_style(appearance,row$series,tag,color)
     if(j==1) {
+      if(!is.null(result$metric) && appearance$palette %in% c("LDJ Editorial","LDJ Editorial · semitransparente") &&
+         identical(s$control,"#9EA7B3") && identical(config$reference_control,"infected_untreated"))
+        s$control <- "#8C6786"
       p <- ggplot2::ggplot(d,ggplot2::aes(.category,.data[[result$y]])) +
         ggplot2::stat_summary(ggplot2::aes(fill=.is_control),fun=mean,geom="col",
           color=grDevices::adjustcolor(s$bar_border,alpha.f=s$bar_border_alpha %||% 1),
