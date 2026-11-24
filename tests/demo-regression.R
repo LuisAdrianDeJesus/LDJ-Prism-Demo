@@ -29,6 +29,18 @@ result <- app$ldj_mtt_analyze_table(mtt,"Concentracion_uM","Viabilidad_pct","Com
   unique(mtt$Compuesto),"uM",inference=TRUE,independent=TRUE)
 p <- unlist(lapply(result$rows,function(row) row$inference$dunnett$p_adjusted))
 stopifnot(length(p)==28,any(p>=.05),any(p<.05))
+activity <- app$editorial_example("activity")
+physical <- app$prepare_controls(activity,"Concentracion_uM","Viabilidad_pct",series_column="Compuesto")
+visual <- app$expand_control_contexts(physical,"Compuesto")
+activity_stats <- lapply(split(visual,visual$Compuesto),function(d)
+  app$ldj_activity_inference(d,"Concentracion_uM","Viabilidad_pct","infected_untreated",
+    "SYNTHETIC-ACTIVITY",TRUE))
+stopifnot(all(vapply(activity_stats,function(row) length(row$audit$control_ids)==4L &&
+  length(row$audit$independent_units)==32L && nrow(row$dunnett)==7L,logical(1))))
+safe_stats <- function(stats) lapply(stats,function(z) {z$anova <- as.data.frame(z$anova); z})
+jsonlite::write_json(list(mtt=safe_stats(app$ldj_mtt_inference_report(result)),
+  activity=safe_stats(activity_stats)),"test-artifacts/demo-anova-dunnett.json",
+  pretty=TRUE,auto_unbox=TRUE,digits=NA)
 safety <- app$editorial_example("safety")
 parameters <- safety[!is.na(safety$parameter),]
 stopifnot(nrow(parameters)==12,all(is.finite(parameters$lower)),all(is.finite(parameters$upper)))

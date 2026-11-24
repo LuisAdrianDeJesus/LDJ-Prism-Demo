@@ -68,7 +68,11 @@ jobs:
           }
           check_versions()
           .libPaths(c(library, .libPaths()))
-          install.packages("shinytest2", lib=library)
+          for (attempt in seq_len(3)) {
+            if (requireNamespace("shinytest2", quietly=TRUE)) break
+            install.packages("shinytest2", lib=library)
+          }
+          stopifnot(requireNamespace("shinytest2", quietly=TRUE))
           check_versions()
           cat(paste0("R_LIBS_USER=", library, "\n"), file=Sys.getenv("GITHUB_ENV"), append=TRUE)
           writeLines(capture.output(sessionInfo()), "R-session.txt")

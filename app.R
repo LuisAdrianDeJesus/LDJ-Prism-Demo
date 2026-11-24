@@ -516,7 +516,7 @@ server <- function(input, output, session) {
       significance_offset=input$mtt_mark_offset,significance_size=input$mtt_mark_size)
     if(original_example("mtt")) {
       result <- ldj_mtt_display_unit(mtt_editable_example(),input$mtt_display_unit)
-      if(input$x_label=="Concentración (µM)") {
+      if(identical(input$x_label,"Concentración (µM)")) {
         unit <- if(result$unit=="uM") "µM" else result$unit
         cfg$x_label <- paste0(if(figure_labels()$english) "Concentration" else "Concentración"," (",unit,")")
       }
@@ -708,9 +708,11 @@ server <- function(input, output, session) {
     load_editorial_example(input$module)
   },ignoreInit=TRUE)
   observeEvent(input$module,{
-    if(input$module %in% c("mtt","activity","safety") && !manual() &&
+    key <- input$module
+    if(identical(key,"safety") && identical(input$safety_display,"summary")) return()
+    if(key %in% c("mtt","activity","safety") && !manual() &&
        (original_example(example_module() %||% "universal") || identical(dataset(),demo_data)))
-      load_editorial_example(input$module)
+      load_editorial_example(key)
   },ignoreInit=TRUE)
   observeEvent(input$restore_project,{
     saved <- project()
