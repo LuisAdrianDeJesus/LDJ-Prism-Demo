@@ -257,7 +257,7 @@ tryCatch({
   stopifnot(app$get_value(input="unit")=="M",app$get_value(input="safety_display")=="editorial")
   app$wait_for_js("Boolean(document.querySelector('#plot img')?.naturalWidth)",timeout=90000)
   capture("editorial-integrated.png")
-  for(example in c("activity","safety")) {
+  for(example in c("mtt","activity","safety")) {
     app$set_inputs(module=example,inspector="Datos")
     app$click("load_example")
     app$wait_for_idle(timeout=90000)
@@ -271,12 +271,20 @@ tryCatch({
       stopifnot(file.info(file)$size>10000)
       if(fmt=="svg") {
         svg <- readLines(file,warn=FALSE)
-        marker <- if(example=="activity") "ANOVA F" else "80–100% viable"
+        marker <- if(example=="safety") "80–100% viable" else "ANOVA F"
+        metric <- if(example=="mtt") "CC50" else "IC50"
         stopifnot(sum(grepl(marker,svg,fixed=TRUE))>=4,
-          sum(grepl("IC50",svg,fixed=TRUE))>=4)
+          sum(grepl(metric,svg,fixed=TRUE))>=4)
       }
     }
+    app$set_inputs(visual_preset="minimal")
+    for(fmt in c("svg","pdf","png")) {
+      file <- file.path("test-artifacts",paste0("minimal-example-",example,".",fmt))
+      app$get_download(fmt,filename=file)
+      stopifnot(file.info(file)$size>10000)
+    }
+    app$set_inputs(visual_preset="editorial")
   }
-  cat("Purpose-built synthetic Activity and Safety editorial examples: PASS\n")
+  cat("Synthetic editorial and minimal examples for all three modules: PASS\n")
 },finally=app$stop())
 

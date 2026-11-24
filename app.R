@@ -171,7 +171,7 @@ checkboxInput("independent", "Confirmo réplicas independientes y control del mi
 numericInput("control", "Concentración del control", 0, min=0),
 selectInput("unit", "Unidad de concentración", c("uM","nM","mM","M")),
 conditionalPanel("input.module === 'safety'",
-selectInput("safety_display","Vista de potencia y seguridad",c("Resumen transversal"="summary","Editorial 4×2"="editorial")),
+selectInput("safety_display","Vista de potencia y seguridad",c("Editorial 4×2"="editorial","Resumen transversal"="summary")),
 conditionalPanel("input.module === 'safety' && input.safety_display === 'editorial'",
   selectInput("cc20_source","Fuente de CC20",c("Calculado por regresión"="regression",
     "Proporcionado en tabla"="table","Mostrar ambas estimaciones"="both"),selected="table"),
@@ -616,6 +616,7 @@ server <- function(input, output, session) {
     updateSelectInput(session,"mtt_source",selected="synthetic")
     updateCheckboxInput(session,"mtt_user_data",value=FALSE)
     updateCheckboxInput(session,"safety_table",value=identical(key,"safety"))
+    if(identical(key,"mtt")) updateTextInput(session,"y_label",value="Viabilidad celular (%)")
     if(identical(key,"safety")) {
       updateSelectInput(session,"safety_display",selected="editorial")
       updateTextInput(session,"y_label",value="Viabilidad celular (%)")
@@ -623,6 +624,7 @@ server <- function(input, output, session) {
     if(identical(key,"activity")) {
       updateCheckboxInput(session,"activity_editorial",value=TRUE)
       updateSelectInput(session,"activity_control_type",selected="infected_untreated")
+      updateSelectInput(session,"threshold_mode",selected="absolute")
       updateTextInput(session,"y_label",value="Células infectadas (%)")
       updateTextInput(session,"model_reason",value=demo_reason)
     }
