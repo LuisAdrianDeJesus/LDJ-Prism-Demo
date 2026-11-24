@@ -65,5 +65,5 @@ for(d2 in list(d[!(d$dose==0 & d$replicate!=1),],within(d,{response[which(dose>0
 }
 dir.create("test-artifacts",showWarnings=FALSE)
 write.csv(do.call(rbind,comparison),"test-artifacts/mtt-cc50-invariance.csv",row.names=FALSE)
-jsonlite::write_json(ldj_mtt_inference_report(new),"test-artifacts/mtt-anova-reference.json",pretty=TRUE,auto_unbox=TRUE)
+jsonlite::write_json(ldj_mtt_inference_report(new),"test-artifacts/mtt-anova-reference.json",pretty=TRUE,auto_unbox=TRUE,digits=NA)
 cat("MTT ANOVA and Dunnett reference, physical units, blocked ineligible designs, and identical CC50/CI: PASS\n")

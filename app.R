@@ -453,7 +453,7 @@ server <- function(input, output, session) {
   },na="ND")
   output$mtt_inference_report <- renderPrint(print(current_mtt_report()))
   output$mtt_statistics <- downloadHandler(filename=function() "LDJ-Prism-MTT-estadistica.json",
-    content=function(file) jsonlite::write_json(current_mtt_report(),file,pretty=TRUE,auto_unbox=TRUE))
+    content=function(file) jsonlite::write_json(current_mtt_report(),file,pretty=TRUE,auto_unbox=TRUE,digits=NA))
   output$mtt_audit <- renderPrint({
     req(figure_template()=="mtt4x2")
     z <- mtt_result()$audit
