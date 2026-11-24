@@ -141,13 +141,18 @@ ldj_cc20_sources <- function(table, fit, tolerance = 10) {
 }
 
 ldj_safety_editorial_plot <- function(result,state,unit,measure="SD",title="",x_label=NULL,y_label=NULL,cc20_source="table",cc20_tolerance=10,show_fit=FALSE,
-                                      viability_label="80–100% viable") {
+                                      viability_label="80–100% viable",panel_styles=list(),
+                                      font_size=12,font_family="sans",show_si=FALSE) {
   stopifnot(cc20_source %in% c("table","regression","both"),is.finite(cc20_tolerance),cc20_tolerance>=0)
   label_unit <- if(unit %in% c("uM","μM")) "µM" else unit
   plots <- list()
   for(i in seq_along(result$rows)) {
     row <- result$rows[[i]]; key <- row$series; tags <- LETTERS[c(2*i-1,2*i)]
-    sf <- ldj_element_style(state,key,tags[1]); sp <- ldj_element_style(state,key,tags[2])
+    lc <- panel_styles[[tags[1]]] %||% list()
+    rc <- panel_styles[[tags[2]]] %||% list()
+    sf <- ldj_element_style(state,key,tags[1],lc$color)
+    sp <- ldj_element_style(state,key,tags[2],rc$color)
+    panel_measure <- lc$summary_measure %||% measure
     cv <- function(x) ldj_convert_concentration(x,"M",unit)
     d <- row$data; d$dose <- cv(d$dose)
     z <- result$table[result$table$series==key & result$table$parameter!="SI",,drop=FALSE]
@@ -170,22 +175,25 @@ ldj_safety_editorial_plot <- function(result,state,unit,measure="SD",title="",x_
         label_value(cv(comparison$gap))," (",signif(comparison$percent,3),"% del ajuste)"),
         if(!is.na(comparison$overlap)) paste("IC95%:",if(comparison$overlap) "se solapan" else "sin solapamiento"))
     }
-    sums <- ldj_dose_dispersion(d$dose,d$response,measure,sf$band_linewidth %||% .65)
+    sums <- ldj_dose_dispersion(d$dose,d$response,panel_measure,sf$band_linewidth %||% .65)
     limits <- if(nrow(sums)) range(c(sums$xmin,sums$xmax),finite=TRUE) else c(NA_real_,NA_real_)
     viability <- if(all(is.finite(limits)) && all(limits>0)) data.frame(xmin=limits[1],xmax=limits[2]) else
       data.frame(xmin=numeric(),xmax=numeric())
     left <- ggplot2::ggplot(d,ggplot2::aes(dose,response))+
       ggplot2::geom_rect(data=viability,ggplot2::aes(xmin=xmin,xmax=xmax,ymin=80,ymax=100),
-        inherit.aes=FALSE,fill=sf$viability_band %||% "#65AA83",alpha=sf$viability_band_alpha %||% .18)+
+        inherit.aes=FALSE,fill=sf$viability_band %||% "#B9DCCB",alpha=sf$viability_band_alpha %||% .42)+
       ggplot2::geom_rect(data=if(state$preset=="editorial") ldj_estimable_dispersion(sums) else sums[FALSE,],
         ggplot2::aes(xmin=xmin,xmax=xmax,ymin=ymin,ymax=ymax),inherit.aes=FALSE,fill=sf$band,alpha=sf$band_alpha %||% .24)+
       ggplot2::geom_errorbar(data=sums,ggplot2::aes(dose,ymin=ymin,ymax=ymax),inherit.aes=FALSE,
         width=.04,colour=sf$error,linewidth=sf$error_linewidth %||% .5,na.rm=TRUE)+
       ggplot2::geom_point(data=sums,ggplot2::aes(dose,mean),inherit.aes=FALSE,
-        shape=sf$point_shape %||% 21,fill=sf$curve,colour=sf$point)+
+        shape=lc$point_shape %||% sf$point_shape %||% 21,
+        size=lc$point_size %||% sf$point_size %||% 2,fill=sf$curve,colour=sf$point)+
       ggplot2::geom_hline(yintercept=80,linetype="dashed",colour=sf$reference,alpha=sf$reference_alpha %||% 1)+
-      ggplot2::scale_x_log10()+ldj_plot_theme(sf)+ggplot2::labs(title=paste(tags[1],key,"· Viabilidad"),
-        x=x_label %||% paste0("Concentración (",label_unit,")"),y=y_label %||% "Viabilidad (%)",
+      (if(identical(lc$x_scale,"linear")) ggplot2::scale_x_continuous() else ggplot2::scale_x_log10())+
+      ldj_plot_theme(sf,lc$font_size %||% font_size,font_family)+ggplot2::labs(title=lc$title %||% paste(tags[1],key,"· Viabilidad"),
+        x=lc$x_label %||% x_label %||% paste0("Concentración (",label_unit,")"),
+        y=lc$y_label %||% y_label %||% "Viabilidad (%)",caption=lc$annotation,
         subtitle=paste(c(source_label,if(!is.null(row$fit$error)) "Curva de ajuste: ND"),collapse="\n"))
     if(nrow(sums)>1L && identical(state$preset,"editorial")) left <- left+
       ggplot2::geom_line(data=sums,ggplot2::aes(dose,mean),inherit.aes=FALSE,
@@ -206,7 +214,8 @@ ldj_safety_editorial_plot <- function(result,state,unit,measure="SD",title="",x_
     if(any(is.finite(table_dose))) left <- left+
       ggplot2::geom_vline(xintercept=table_dose,linetype="dotted",colour=sf$reference,alpha=sf$reference_alpha %||% 1)+
       ggplot2::annotate("point",x=table_dose,y=axis_marker,shape=24,size=3,fill=sf$curve,colour=sf$point)
-    left <- left+ggplot2::theme(plot.subtitle=ggplot2::element_text(colour=sf$curve))
+    left <- left+ggplot2::theme(plot.subtitle=ggplot2::element_text(colour=sf$curve))+
+      ggplot2::coord_cartesian(xlim=lc$x_limits,ylim=lc$y_limits)
     right <- ggplot2::ggplot(z,ggplot2::aes(y=parameter))+ggplot2::scale_y_discrete(drop=FALSE)
     for(j in which(is.finite(selected$display) & is.finite(ic) & ic>0)) {
       cc <- selected$display[j]
@@ -216,19 +225,26 @@ ldj_safety_editorial_plot <- function(result,state,unit,measure="SD",title="",x_
     }
     below <- selected$parameter[is.finite(selected$display)&is.finite(ic)&selected$display<ic]
     if(length(below)) notes <- c(paste0("Advertencia: CC20 < IC50 (",paste(sub("CC20 · ","",below),collapse=" / "),")"),notes)
+    if(isTRUE(show_si)) {
+      si <- result$table$estimate[result$table$series==key & result$table$parameter=="SI"]
+      if(length(si)==1L && is.finite(si)) notes <- c(notes,paste("SI =",signif(si,4)))
+    }
     intervals <- z[is.finite(z$lower)&is.finite(z$upper)&z$lower>0&z$upper>=z$lower,]
     shown <- z[is.finite(z$estimate),]; missing <- z[!is.finite(z$estimate),]
     if(nrow(intervals)) right <- right+ggplot2::geom_errorbar(data=intervals,ggplot2::aes(xmin=lower,xmax=upper,colour=parameter),
       orientation="y",width=.16,alpha=sp$error_alpha %||% 1)
-    if(nrow(shown)) right <- right+ggplot2::geom_point(data=shown,ggplot2::aes(x=estimate,shape=parameter,fill=parameter),colour=sp$point,size=3)+
+    if(nrow(shown)) right <- right+ggplot2::geom_point(data=shown,ggplot2::aes(x=estimate,shape=parameter,fill=parameter),colour=sp$point,size=rc$point_size %||% sp$point_size %||% 3)+
       ggplot2::geom_text(data=shown,ggplot2::aes(x=estimate,label=label_value(estimate)),vjust=-.9,colour=sp$text,size=3)
     if(nrow(missing)) right <- right+ggplot2::geom_text(data=missing,ggplot2::aes(x=Inf,label="ND"),hjust=1.1,colour=sp$text)
     parameter_colors <- c(IC50="#0072B2",`CC20 · Ajuste`=sp$curve,`CC20 · Tabla`=sp$curve,CC50="#31805E")
     right <- right+ggplot2::scale_fill_manual(values=parameter_colors,guide="none")+
       ggplot2::scale_colour_manual(values=parameter_colors,guide="none")+
       ggplot2::scale_shape_manual(values=c(IC50=21,`CC20 · Ajuste`=23,`CC20 · Tabla`=24,CC50=22),guide="none")+
-      ggplot2::scale_x_log10(expand=ggplot2::expansion(mult=c(.25,.25)))+ldj_plot_theme(sp)+
-      ggplot2::labs(title=paste(tags[2],key,"· Parámetros"),x=paste0("Concentración (",label_unit,")"),y=NULL,
+      (if(identical(rc$x_scale,"linear")) ggplot2::scale_x_continuous(expand=ggplot2::expansion(mult=.25)) else
+        ggplot2::scale_x_log10(expand=ggplot2::expansion(mult=.25)))+
+      ggplot2::coord_cartesian(xlim=rc$x_limits)+ldj_plot_theme(sp,rc$font_size %||% font_size,font_family)+
+      ggplot2::labs(title=rc$title %||% paste(tags[2],key,"· Parámetros"),
+        x=rc$x_label %||% paste0("Concentración (",label_unit,")"),y=rc$y_label,caption=rc$annotation,
         subtitle=if(length(notes)) paste(notes,collapse="\n") else "Franja: separación descriptiva IC50–CC20")
     plots <- c(plots,list(left,right))
   }

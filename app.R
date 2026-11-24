@@ -177,6 +177,7 @@ conditionalPanel("input.module === 'safety' && input.safety_display === 'editori
     "Proporcionado en tabla"="table","Mostrar ambas estimaciones"="both"),selected="table"),
   numericInput("cc20_tolerance","Tolerancia (% del CC20 del ajuste)",10,min=0,step=1),
   checkboxInput("safety_show_fit","Superponer la curva ajustada",FALSE),
+  checkboxInput("safety_show_si","Mostrar etiqueta de SI",FALSE),
   textInput("safety_viability_label","Etiqueta de la franja de viabilidad","80–100% viable")),
 helpText("Editorial: combine en una tabla cuatro grupos, filas de parámetros con parameter/estimate/unit y filas de viabilidad con parameter vacío y columnas X/Y. X debe usar la unidad de concentración seleccionada."),
 
@@ -1101,7 +1102,8 @@ server <- function(input, output, session) {
       return(ldj_safety_editorial_plot(safety_editorial_result(),appearance(),input$safety_unit,input$dispersion,
         input$plot_title,y_label=input$y_label,cc20_source=input$cc20_source %||% "table",
         cc20_tolerance=input$cc20_tolerance %||% 10,
-        show_fit=isTRUE(input$safety_show_fit),viability_label=input$safety_viability_label))
+        show_fit=isTRUE(input$safety_show_fit),viability_label=input$safety_viability_label,
+        panel_styles=mtt_styles(),font_size=input$font_size,font_family=input$font_family,show_si=isTRUE(input$safety_show_si)))
     if(identical(input$module,"safety")) return(ldj_safety_plot(analysis()$table,appearance(),
       input$safety_unit %||% "uM",input$plot_title,input$font_size,input$font_family,isTRUE(input$grid_lines)))
     req(selection_ready())
@@ -1201,7 +1203,7 @@ server <- function(input, output, session) {
     for(module in c("mtt","activity")) {
       items <- Filter(function(entry) identical(entry$module,module),registry)
       labels <- vapply(items,function(entry) paste(entry$assay,"·",entry$conditions),character(1))
-      updateSelectInput(session,paste0("registry_",module),choices=c("Seleccionar"="",stats::setNames(names(items),labels)))
+      updateSelectInput(session,paste0("registry_",module),choices=c("Seleccionar"="",stats::setNames(as.character(names(items)),labels)))
     }
   })
   observeEvent(input$registry_integrate,{
