@@ -244,9 +244,9 @@ ldj_mtt_table_figure <- function(result,config=list()) {
   }
   cfg$appearance <- appearance
   list(figure=patchwork::wrap_plots(plots,ncol=2,nrow=length(result$rows))+patchwork::plot_annotation(title=config$figure_title,
-    caption=if(!is.null(result$metric)) paste("Medias ±",cfg$summary_measure,"· Las sombras indican dispersión observada de la media, no incertidumbre del ajuste.") else paste0("Medias ± ",cfg$summary_measure," · Sombras de dispersión observada. Ajustes absolutos; controles descriptivos. ",
+    caption=paste(strwrap(if(!is.null(result$metric)) paste("Medias ±",cfg$summary_measure,"· Las sombras indican dispersión observada de la media, no incertidumbre del ajuste.") else paste0("Medias ± ",cfg$summary_measure," · Sombras de dispersión observada. Ajustes absolutos; controles descriptivos. ",
       if(any(vapply(result$rows,function(row) !is.null(row$inference$labels),logical(1))))
-        "Contrastes Dunnett solo en series elegibles; ajuste por serie. Unidad: " else "Sin comparaciones relativas al control. Unidad: ",result$unit),
+        "Contrastes Dunnett solo en series elegibles; ajuste por serie. Unidad: " else "Sin comparaciones relativas al control. Unidad: ",result$unit),width=88),collapse="\n"),
     theme=ldj_plot_theme(ldj_element_style(appearance),cfg$font_size,cfg$font_family)),
     panels=plots,config=cfg,audit=result$audit)
 }
