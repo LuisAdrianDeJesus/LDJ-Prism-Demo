@@ -137,7 +137,9 @@ selectInput("safety_display","Vista de potencia y seguridad",c("Resumen transver
 conditionalPanel("input.module === 'safety' && input.safety_display === 'editorial'",
   selectInput("cc20_source","Fuente de CC20",c("Calculado por regresión"="regression",
     "Proporcionado en tabla"="table","Mostrar ambas estimaciones"="both"),selected="table"),
-  numericInput("cc20_tolerance","Tolerancia (% del CC20 del ajuste)",10,min=0,step=1)),
+  numericInput("cc20_tolerance","Tolerancia (% del CC20 del ajuste)",10,min=0,step=1),
+  checkboxInput("safety_show_fit","Superponer la curva ajustada",FALSE),
+  textInput("safety_viability_label","Etiqueta de la franja de viabilidad","80–100% viable")),
 helpText("Editorial: combine en una tabla cuatro grupos, filas de parámetros con parameter/estimate/unit y filas de viabilidad con parameter vacío y columnas X/Y. X debe usar la unidad de concentración seleccionada."),
 
 checkboxInput("safety_table","Leer parámetros de la tabla (parameter, estimate, unit; lower/upper opcionales)",FALSE),
@@ -160,7 +162,8 @@ selectInput("kind", "Tipo de gráfica",
 selectInput("preset", "Preset LDJ-FIG v2.0", c("Color accesible"="color", "Blanco y negro"="mono", "Presentación"="slides")),
 actionButton("apply_preset", "Aplicar preset"), helpText("Propuestas de estilo; pendientes de comparación con figuras de referencia.")
 ),
-tabPanel("MTT 4×2",
+tabPanel("Editor de paneles",
+conditionalPanel("input.module !== 'universal'", uiOutput("editor_context")),
 p("Las opciones gráficas no recalculan modelos ni comparaciones. La demo usa resultados calculados exclusivamente de datos sintéticos."),
 selectInput("mtt_target","Aplicar estilo a",c("Todos los paneles"="all",LETTERS[1:8])),
 checkboxInput("mtt_significance","Mostrar significancia",TRUE),
@@ -373,27 +376,24 @@ server <- function(input, output, session) {
     for(tag in names(styles)) styles[[tag]]$color <- NULL
     mtt_styles(styles)
   },ignoreInit=TRUE)
-  observeEvent(figure_template(),{
-    if(figure_template()=="mtt4x2") {
-      updateNumericInput(session,"width",value=12)
-      updateNumericInput(session,"height",value=18)
-    }
+  editorial_module <- reactive({
+    if(identical(figure_template(),"mtt4x2")) return("mtt")
+    if(identical(input$module,"activity") && isTRUE(input$activity_editorial)) return("activity")
+    if(identical(input$module,"safety") && identical(input$safety_display,"editorial")) return("safety")
+    NULL
   })
-  observeEvent(list(input$module,input$activity_editorial,input$safety_display),{
-    if(!identical(figure_template(),"universal")) return()
-    if(identical(input$module,"activity") && isTRUE(input$activity_editorial)) {
-      updateNumericInput(session,"width",value=12)
-      updateNumericInput(session,"height",value=max(5,4.5*min(4,length(color_series()))))
-    }
-    if(identical(input$module,"safety") && identical(input$safety_display,"editorial")) {
-      updateNumericInput(session,"width",value=12)
-      updateNumericInput(session,"height",value=18)
-    }
-    if(identical(input$module,"safety") && !identical(input$safety_display,"editorial")) {
-      updateNumericInput(session,"width",value=10)
-      updateNumericInput(session,"height",value=8)
-    }
-  },ignoreInit=TRUE)
+  observeEvent(list(editorial_module(), input$module),{
+    key <- editorial_module()
+    dimensions <- if(!is.null(key)) ldj_editorial_dimensions(key) else
+      if(identical(input$module,"safety")) c(width=10,height=8) else c(width=7,height=5)
+    updateNumericInput(session,"width",value=dimensions[["width"]])
+    updateNumericInput(session,"height",value=dimensions[["height"]])
+  })
+  output$editor_context <- renderUI({
+    key <- editorial_module()
+    if(is.null(key)) return(NULL)
+    p(switch(key,mtt="Citotoxicidad MTT",activity="Actividad farmacológica",safety="Potencia y seguridad"))
+  })
   mtt_result <- reactive({
     req(figure_template()=="mtt4x2",input$font_size,input$palette,input$dispersion)
     b <- if(isTRUE(input$mtt_user_data)) list(synthetic=FALSE) else mtt_bundle(); pal <- ldj_mtt_defaults()$palette
@@ -464,16 +464,19 @@ server <- function(input, output, session) {
     if(isTRUE(input$mtt_user_data)) {req(table_result()); return(head(do.call(rbind,lapply(table_result()$rows,`[[`,"data")),60))}
     head(mtt_bundle()$orig,60)})
   output$plot_container <- renderUI({
-    if(identical(figure_template(),"mtt4x2")) {
-      zoom <- if(is.null(input$preview_zoom)) 1 else input$preview_zoom/100
-      plotOutput("plot",height=paste0(round(1500*zoom),"px"),width=paste0(round(1000*zoom),"px"))
-    } else if(identical(input$module,"safety") && identical(input$safety_display,"editorial")) {
-      plotOutput("plot",height="1280px")
-    } else if(identical(input$module,"activity") && isTRUE(input$activity_editorial)) {
-      n <- length(color_series())
-      plotOutput("plot",height=paste0(320*max(1,min(4,n)),"px"))
-    } else plotOutput("plot",height="520px")
+    key <- editorial_module()
+    if(is.null(key)) return(plotOutput("plot",height="520px"))
+    zoom <- (input$preview_zoom %||% 100)/100
+    rows <- if(key=="activity") max(1,min(4,length(color_series()))) else 4L
+    dimensions <- ldj_editorial_dimensions(key, rows)
+    preview_width <- round(820*zoom)
+    preview_max <- paste0(round(100*zoom),"%")
+    tags$div(style="overflow-x:auto;",
+      tags$div(style=sprintf("width:%dpx;max-width:%s;aspect-ratio:%.6f;position:relative;",
+        preview_width,preview_max,dimensions[["width"]]/dimensions[["height"]]),
+        plotOutput("plot",height="100%",width="100%")))
   })
+
   source_data <- reactiveVal(demo_data)
   working <- reactiveVal(demo_data)
   dataset <- reactive(working())
@@ -1019,7 +1022,8 @@ server <- function(input, output, session) {
     if(identical(input$module,"safety") && identical(input$safety_display,"editorial"))
       return(ldj_safety_editorial_plot(safety_editorial_result(),appearance(),input$safety_unit,input$dispersion,
         input$plot_title,y_label=input$y_label,cc20_source=input$cc20_source %||% "table",
-        cc20_tolerance=input$cc20_tolerance %||% 10))
+        cc20_tolerance=input$cc20_tolerance %||% 10,
+        show_fit=isTRUE(input$safety_show_fit),viability_label=input$safety_viability_label))
     if(identical(input$module,"safety")) return(ldj_safety_plot(analysis()$table,appearance(),
       input$safety_unit %||% "uM",input$plot_title,input$font_size,input$font_family,isTRUE(input$grid_lines)))
     req(selection_ready())

@@ -45,7 +45,7 @@ ldj_appearance <- function(palette="LDJ Editorial",preset="editorial") {
       linetype="solid",background=p$background,panel_background=p$background,
       text=p$text,title=p$text,subtitle=p$text,legend=p$text,axis=p$text,ticks=p$text,
       grid=if(palette=="Prism Dark") "#465064" else if(palette=="Black and White") "#DDDDDD" else "#DFE3E8",
-      control=if(palette=="Prism Dark") "#A9AFBA" else if(palette=="Black and White") "#A0A0A0" else "#9DA4AD",
+      control=if(palette=="Prism Dark") "#A9AFBA" else if(palette=="Black and White") "#A0A0A0" else "#9EA7B3",
       reference=if(palette=="Prism Dark") "#D4DBE6" else if(palette=="Black and White") "#666666" else "#6B7280",
       significance=if(palette=="Prism Dark") "#F2BBE0" else if(palette=="Black and White") "#333333" else "#6B1E58"),
     series_styles=list(),panels=list())
@@ -355,4 +355,12 @@ ldj_color_server <- function(input,output,session,series) {
     },error=function(e) shiny::showNotification(conditionMessage(e),type="error"))
   })
   state
+}
+
+
+# Reference PNG dimensions translated to inches at 600 dpi.
+ldj_editorial_dimensions <- function(module, rows=4L) {
+  pixels <- switch(module, mtt=c(5130,7260), activity=c(5070,7200), safety=c(5010,6270))
+  stopifnot(!is.null(pixels),length(rows)==1L,rows %in% 1:4)
+  stats::setNames(c(pixels[1],pixels[2]*rows/4)/600,c("width","height"))
 }

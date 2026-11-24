@@ -4086,13 +4086,13 @@
   },
   "files": {
     "app.R": {
-      "checksum": "f5c7c141ce7f591129901a8e2f38eb3b"
+      "checksum": "d40dba263d700cb0feab2152aade2e1c"
     },
     "R/analysis.R": {
       "checksum": "65e4a516b7ae91cf44564404a78273ce"
     },
     "R/appearance.R": {
-      "checksum": "8f34c2f395d58d0bc21624f1e84f5308"
+      "checksum": "1e309cf43cea91f766b72822d4628606"
     },
     "R/mtt_data_entry.R": {
       "checksum": "14c6b26d0f58843f200859b3ef03093b"
@@ -4104,7 +4104,7 @@
       "checksum": "b3f9f595259aeb459fc520a0facd207d"
     },
     "R/pharmacology.R": {
-      "checksum": "ba585e3caac5f642fdcabf9cd1dc4ef9"
+      "checksum": "49e396a4a788294592a7eec34abed6cb"
     }
   },
   "users": null

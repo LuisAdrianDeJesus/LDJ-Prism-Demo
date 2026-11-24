@@ -28,7 +28,7 @@ tryCatch({
   app$wait_for_idle(timeout=90000)
   app$wait_for_js("Boolean(document.querySelector('#plot img') && document.querySelector('#plot img').naturalWidth > 0)",timeout=90000)
   stopifnot(app$get_js("document.querySelectorAll('.shiny-output-error').length")==0)
-  app$set_inputs(inspector="MTT 4×2",mtt_target="A",mtt_title="A. Browser panel title",mtt_hex="#123456",mtt_note="Synthetic annotation")
+  app$set_inputs(inspector="Editor de paneles",mtt_target="A",mtt_title="A. Browser panel title",mtt_hex="#123456",mtt_note="Synthetic annotation")
   app$click("mtt_apply"); app$wait_for_idle()
   stopifnot(app$get_js("document.querySelectorAll('.shiny-output-error').length")==0)
   app$set_inputs(inspector="Exportar")

@@ -105,7 +105,7 @@ ldj_activity_inference <- function(d,x,y,type,experiment,confirmed) {
 
 ldj_safety_editorial <- function(table,d,x,y,group,input_unit,unit,model,state,measure="SD",title="") {
   keys <- unique(table$series)
-  if(length(keys)!=4L) stop("El modo editorial requiere cuatro grupos de parámetros.")
+  if(!length(keys) || length(keys)>4L) stop("El modo editorial requiere entre uno y cuatro grupos de parámetros.")
   treatment <- if("control_type"%in%names(d)) !is.na(d$control_type)&d$control_type=="treatment" else rep(TRUE,nrow(d))
   d <- d[treatment & is.finite(d[[x]]) & d[[x]]>0 & is.finite(d[[y]]),,drop=FALSE]
   fits <- lapply(keys,function(key) {
@@ -140,7 +140,8 @@ ldj_cc20_sources <- function(table, fit, tolerance = 10) {
   list(sources=sources,gap=gap,percent=percent,exceeds=isTRUE(percent>tolerance),overlap=overlap)
 }
 
-ldj_safety_editorial_plot <- function(result,state,unit,measure="SD",title="",x_label=NULL,y_label=NULL,cc20_source="table",cc20_tolerance=10) {
+ldj_safety_editorial_plot <- function(result,state,unit,measure="SD",title="",x_label=NULL,y_label=NULL,cc20_source="table",cc20_tolerance=10,show_fit=FALSE,
+                                      viability_label="80–100% viable") {
   stopifnot(cc20_source %in% c("table","regression","both"),is.finite(cc20_tolerance),cc20_tolerance>=0)
   label_unit <- if(unit %in% c("uM","μM")) "µM" else unit
   plots <- list()
@@ -186,9 +187,15 @@ ldj_safety_editorial_plot <- function(result,state,unit,measure="SD",title="",x_
       ggplot2::scale_x_log10()+ldj_plot_theme(sf)+ggplot2::labs(title=paste(tags[1],key,"· Viabilidad"),
         x=x_label %||% paste0("Concentración (",label_unit,")"),y=y_label %||% "Viabilidad (%)",
         subtitle=paste(c(source_label,if(!is.null(row$fit$error)) "Curva de ajuste: ND"),collapse="\n"))
-    if(is.null(row$fit$error)) {
+    if(nrow(sums)>1L && identical(state$preset,"editorial")) left <- left+
+      ggplot2::geom_line(data=sums,ggplot2::aes(dose,mean),inherit.aes=FALSE,
+        colour=sf$curve,linewidth=sf$curve_linewidth %||% sf$linewidth)
+    if(nrow(viability) && nzchar(viability_label %||% "")) left <- left+
+      ggplot2::annotate("text",x=viability$xmax,y=99,label=viability_label,hjust=1,vjust=1,
+        colour=sf$text,size=3)
+    if(isTRUE(show_fit) && is.null(row$fit$error)) {
       curve <- row$fit$curve; curve$dose <- cv(curve$dose)
-      left <- left+ggplot2::geom_line(data=curve,colour=sf$curve,alpha=sf$curve_alpha %||% sf$alpha)
+      left <- left+ggplot2::geom_line(data=curve,colour=sf$curve,linetype="dashed",alpha=sf$curve_alpha %||% sf$alpha)
     }
     model_dose <- selected$display[selected$source=="regression"]
     table_dose <- selected$display[selected$source=="table"]
