@@ -4,7 +4,7 @@
 ldj_mtt_normalize_numeric <- function(d, decimal = ".") {
   if (!decimal %in% c(".", ",")) stop("Separador decimal no admitido.")
   if (!is.data.frame(d) || !ncol(d)) stop("La tabla debe tener columnas.")
-  identifiers <- c("observation_id", "record_id", "experiment_id", "control_source",
+  identifiers <- c("observation_id", "independent_unit_id", "record_id", "experiment_id", "control_source",
     "control_type", "control_label", "inference_eligible", "control_series",
     "concentration_unit", "Compuesto", "Series", "drug", "series")
   for (name in setdiff(names(d), identifiers)) {

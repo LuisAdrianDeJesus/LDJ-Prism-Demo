@@ -47,8 +47,9 @@ ldj_mtt_inference <- function(d,x,y,type="untreated",confirmed=FALSE) {
   unavailable <- function(reason) list(status=paste("Inferencia no disponible:",reason))
   if(!any(d$.is_control & d$.control_type==type))
     return(unavailable(paste("No hay control",type,"asignado a la serie.")))
-  if(!"experiment_id" %in% names(d))
-    return(unavailable("Falta experiment_id."))
+  missing <- setdiff(c("control_type","observation_id","experiment_id","control_source",
+    "inference_eligible","independent_unit_id"),names(d))
+  if(length(missing)) return(unavailable(paste("Faltan columnas:",paste(missing,collapse=", "))))
   experiments <- d$experiment_id[!d$.is_control]
   if(anyNA(experiments) || any(!nzchar(trimws(experiments))) || length(unique(experiments))!=1L)
     return(unavailable("Se requiere un experimento por serie. Separe experimentos o especifique un diseño por bloques."))

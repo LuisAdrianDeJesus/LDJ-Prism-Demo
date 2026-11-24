@@ -11,9 +11,15 @@ d$control_source <- "Synthetic fixture"
 d$inference_eligible <- d$dose==0
 fit <- function(d, enabled, model="4PL",unit="uM") ldj_mtt_analyze_table(d,"dose","response","series",
   series,unit,model,inference=enabled,independent=TRUE)
+comparison <- list()
 for(model in c("3PL","4PL")) {
   old <- fit(d,FALSE,model)
   new <- fit(d,TRUE,model)
+  comparison[[model]] <- do.call(rbind,lapply(seq_along(series),function(i) {
+    a <- old$rows[[i]]$fit$table; b <- new$rows[[i]]$fit$table
+    data.frame(model=model,series=series[i],before=a$estimate,after=b$estimate,
+      lower_before=a$lower,lower_after=b$lower,upper_before=a$upper,upper_after=b$upper)
+  }))
   for(i in seq_along(series)) stopifnot(identical(old$rows[[i]]$fit$table,new$rows[[i]]$fit$table),
     identical(old$rows[[i]]$fit$curve,new$rows[[i]]$fit$curve))
 }
@@ -58,5 +64,6 @@ for(d2 in list(d[!(d$dose==0 & d$replicate!=1),],within(d,{response[which(dose>0
   stopifnot(is.null(ldj_mtt_inference(dd[dd$series=="A",],"dose","response",confirmed=TRUE)$dunnett))
 }
 dir.create("test-artifacts",showWarnings=FALSE)
+write.csv(do.call(rbind,comparison),"test-artifacts/mtt-cc50-invariance.csv",row.names=FALSE)
 jsonlite::write_json(ldj_mtt_inference_report(new),"test-artifacts/mtt-anova-reference.json",pretty=TRUE,auto_unbox=TRUE)
 cat("MTT ANOVA and Dunnett reference, physical units, blocked ineligible designs, and identical CC50/CI: PASS\n")
