@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/ldj-lab-logo.webp" alt="Laboratorio de Virología Molecular LDJ" width="360">
+  <img src="assets/ldj-lab-logo.svg" alt="Laboratorio de Virología Molecular LDJ" width="440">
 
   <h1>LDJ Prism</h1>
   <p><strong>Plataforma interactiva de análisis estadístico, farmacología y visualización científica</strong></p>
