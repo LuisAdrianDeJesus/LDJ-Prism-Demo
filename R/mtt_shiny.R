@@ -120,6 +120,19 @@ ldj_mtt_analyze_table <- function(data, x, y, group, series, unit,
     control_assignments <- mapped
   }
   canonical <- canonical[keep, , drop=FALSE]
+  # Check the registered units before physical de-duplication can hide a conflict.
+  ambiguous_ids <- character()
+  ids_needed <- c("control_type","experiment_id","observation_id","independent_unit_id")
+  if(isTRUE(inference) && all(ids_needed %in% names(canonical))) {
+    control_rows <- canonical$control_type == reference &
+      !is.na(canonical$experiment_id) & nzchar(trimws(canonical$experiment_id)) &
+      !is.na(canonical$observation_id) & nzchar(trimws(canonical$observation_id))
+    controls <- canonical[which(control_rows),,drop=FALSE]
+    keys <- paste(controls$experiment_id,controls$observation_id,sep="::")
+    units <- split(trimws(as.character(controls$independent_unit_id)),keys)
+    ambiguous_ids <- names(units)[vapply(units,function(x)
+      length(x)>1L && (anyNA(x) || any(!nzchar(x)) || length(unique(x))!=1L),logical(1))]
+  }
   physical <- prepare_controls(canonical, x, y, series_column=group)
   physical <- ldj_mtt_apply_control_map(physical, group, series, control_assignments)
   visual <- expand_control_contexts(physical, group)
@@ -136,8 +149,14 @@ ldj_mtt_analyze_table <- function(data, x, y, group, series, unit,
       stop("Datos insuficientes en ", s, ": mínimo ocho observaciones y cinco dosis positivas distintas.")
     mapped <- data.frame(dose=treatment[[x]], response=treatment[[y]], series=s)
     fit <- fit_response(mapped, model, 50, "absolute", 0, "exclude")
-    list(data=d, fit=fit, series=s, inference=if(isTRUE(inference))
-      ldj_mtt_inference(d,x,y,reference,independent) else NULL)
+    stats <- NULL
+    if(isTRUE(inference)) {
+      physical_ids <- paste(d$experiment_id,d$observation_id,sep="::")
+      stats <- if(any(physical_ids[d$.is_control & d$.control_type==reference] %in% ambiguous_ids))
+        list(status="Inferencia no disponible: un control físico tiene unidades independientes contradictorias o faltantes.")
+      else ldj_mtt_inference(d,x,y,reference,independent)
+    }
+    list(data=d, fit=fit, series=s, inference=stats)
   })
   list(rows=rows, unit="uM", input_unit=unit, x=x, y=y, physical=physical,
        control_assignments=control_assignments,

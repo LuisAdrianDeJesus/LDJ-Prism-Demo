@@ -59,6 +59,11 @@ for(s in series) {
 z <- fit(shared,TRUE)
 stopifnot(z$audit$shared_physical_n==3,z$audit$shared_visual_n==12,
   all(vapply(z$rows,function(row) length(row$inference$audit$control_ids)==3L,logical(1))))
+conflict <- shared
+conflict$independent_unit_id[which(conflict$series=="D" & conflict$dose==0)[1]] <- "contradictory-unit"
+z <- fit(conflict,TRUE)
+stopifnot(all(vapply(z$rows,function(row) is.null(row$inference$dunnett) &&
+  grepl("contradictorias",row$inference$status,fixed=TRUE),logical(1))))
 for(d2 in list(d[!(d$dose==0 & d$replicate!=1),],within(d,{response[which(dose>0)[1]] <- NA_real_}))) {
   dd <- prepare_controls(d2,"dose","response",series_column="series")
   stopifnot(is.null(ldj_mtt_inference(dd[dd$series=="A",],"dose","response",confirmed=TRUE)$dunnett))
