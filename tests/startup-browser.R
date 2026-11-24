@@ -215,8 +215,15 @@ tryCatch({
     export <- file.path("test-artifacts",paste0("mtt-physical-controls.",fmt))
     app$get_download(fmt,filename=export)
     stopifnot(file.info(export)$size>10000)
+    if(fmt=="png") {
+      con <- file(export,"rb")
+      seek(con,16)
+      dimensions <- readBin(con,integer(),2,size=4,endian="big")
+      close(con)
+      stopifnot(identical(dimensions,c(4800L,7200L)))
+    }
   }
-  capture("mtt-physical-controls.png")
+  capture("mtt-physical-controls-browser.png")
   app$set_inputs(module="activity",inspector="Análisis",activity_control_type="untreated",
     experiment_id="QA",independent=TRUE,model_reason="Synthetic 4PL regression fixture")
   app$click("run_analysis")
