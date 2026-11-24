@@ -726,6 +726,18 @@ server <- function(input, output, session) {
     updateCheckboxInput(session,"mtt_user_data",value=TRUE)
     updateCheckboxInput(session,"safety_table",value="parameter" %in% names(saved$data))
   })
+  grid_values <- function(table) lapply(table,function(x) {
+    x <- as.character(x)
+    x[is.na(x)] <- ""
+    x
+  })
+  mark_edited_example <- function() {
+    if(manual()) return()
+    manual(TRUE)
+    manual_snapshot(NULL)
+    updateCheckboxInput(session,"independent",value=FALSE)
+    if(identical(input$module,"mtt")) updateCheckboxInput(session,"mtt_user_data",value=TRUE)
+  }
   confirm_grid <- function() {
     d <- ldj_mtt_normalize_numeric(grid_data(),input$decimal %||% ".")
     if(!nrow(d) || !ncol(d) || !any(vapply(d,function(x)
@@ -745,6 +757,8 @@ server <- function(input, output, session) {
       if(!any(rows)) stop("Indique un parámetro IC50, CC20 o CC50.")
       ldj_safety_results(d[rows,,drop=FALSE],"group",input$decimal %||% ".")
     }
+    if(!is.null(example_module()) && !identical(grid_values(d),grid_values(working())))
+      mark_edited_example()
     working(d)
     draft_pending(FALSE)
   }
@@ -753,19 +767,8 @@ server <- function(input, output, session) {
     d <- tryCatch(ldj_mtt_normalize_numeric(grid_data(),input$decimal %||% "."),
       error=function(e) NULL)
     if(!is.null(d)) {
-      current <- working()
-      canonical <- function(table) lapply(table,function(x) {
-        x <- as.character(x)
-        x[is.na(x)] <- ""
-        x
-      })
-      changed <- !identical(canonical(d),canonical(current))
-      if(changed && !manual()) {
-        manual(TRUE)
-        manual_snapshot(NULL)
-        updateCheckboxInput(session,"independent",value=FALSE)
-        if(identical(input$module,"mtt")) updateCheckboxInput(session,"mtt_user_data",value=TRUE)
-      }
+      changed <- !identical(grid_values(d),grid_values(working()))
+      if(changed) mark_edited_example()
       draft_pending(changed)
     }
   },ignoreInit=TRUE)
