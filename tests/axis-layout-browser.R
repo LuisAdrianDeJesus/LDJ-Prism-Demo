@@ -26,7 +26,7 @@ tryCatch({
       stopifnot(length(sz)==2,abs(sz[2]/sz[1]-expected)<.01)
       cat(module,w,h,"viewport;",sz[1],sz[2],"plot CSS pixels\n")
     }
-    screenshot(paste0("axis-layout-",module,".png"))
+    screenshot(paste0("axis-screen-",module,".png"))
     app$set_inputs(inspector="Exportar",wait_=FALSE)
     for(fmt in c("svg","pdf","png")) {
       path <- file.path("test-artifacts",paste0("axis-layout-",module,".",fmt))

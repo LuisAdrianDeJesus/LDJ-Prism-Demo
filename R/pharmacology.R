@@ -171,7 +171,9 @@ ldj_safety_editorial_plot <- function(result,state,unit,measure="SD",title="",x_
     label_value <- function(x) ifelse(is.finite(x),paste(signif(x,4),label_unit),"ND")
     source_label <- paste(paste0(selected$parameter,": ",label_value(selected$display)),collapse="\n")
     notes <- character()
-    if(is.finite(comparison$gap)) {
+    # Equivalent fits commonly differ by floating-point round-off after unit
+    # conversion. Reserve annotation space for numerically distinct comparisons.
+    if(is.finite(comparison$gap) && is.finite(comparison$percent) && comparison$percent>.001) {
       notes <- c(paste0(if(comparison$exceeds) "Discrepancia: " else "Diferencia: ",
         label_value(cv(comparison$gap))," (",signif(comparison$percent,3),"% del ajuste)"),
         if(!is.na(comparison$overlap)) paste("IC95%:",if(comparison$overlap) "se solapan" else "sin solapamiento"))
@@ -246,7 +248,7 @@ ldj_safety_editorial_plot <- function(result,state,unit,measure="SD",title="",x_
       ggplot2::coord_cartesian(xlim=rc$x_limits)+ldj_plot_theme(sp,rc$font_size %||% font_size,font_family)+
       ggplot2::labs(title=rc$title %||% paste(tags[2],key,if(english) "· Parameters" else "· Parámetros"),
         x=rc$x_label %||% paste0(dose_label," (",label_unit,")"),y=rc$y_label,caption=rc$annotation,
-        subtitle=if(length(notes)) paste(notes,collapse="\n") else "Franja: separación descriptiva IC50–CC20")
+        subtitle=if(length(notes)) paste(notes,collapse="\n") else NULL)
     left <- ldj_editorial_axes(left,axes,tags[1],percent=TRUE,
       xlog=!identical(lc$x_scale %||% x_scale,"linear"),xlim=lc$x_limits,ylim=lc$y_limits)
     right <- ldj_editorial_axes(right,axes,tags[2],discrete_y=TRUE,
