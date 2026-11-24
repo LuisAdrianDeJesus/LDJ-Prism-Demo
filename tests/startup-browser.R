@@ -261,6 +261,16 @@ tryCatch({
     app$set_inputs(module=example,inspector="Datos")
     app$click("load_example")
     app$wait_for_idle(timeout=90000)
+    for(fmt in c("csv","xlsx")) {
+      path <- file.path("test-artifacts",paste0("data-",example,".",fmt))
+      app$get_download(paste0("example_",fmt),filename=path)
+      data <- if(fmt=="csv") read.csv(path) else readxl::read_xlsx(path)
+      stopifnot(length(unique(data$Compuesto))==4,nrow(data)>=128)
+    }
+    app$set_inputs(inspector="Colores")
+    app$click("colors_reset")
+    app$wait_for_idle()
+    stopifnot(app$get_value(input="palette")=="LDJ Editorial")
     app$set_inputs(inspector="Gráfica")
     app$wait_for_js("Boolean(document.querySelector('#plot img')?.naturalWidth)",timeout=90000)
     capture(paste0("editorial-example-",example,".png"))

@@ -3950,6 +3950,15 @@
         "RemoteSha": "3.0.3"
       }
     },
+    "writexl": {
+      "Source": "RSPM",
+      "Repository": "https://packagemanager.posit.co/cran/latest",
+      "description": {
+        "Package": "writexl",
+        "Version": "1.6.0",
+        "NeedsCompilation": "yes"
+      }
+    },
     "xfun": {
       "Source": "RSPM",
       "Repository": "https://packagemanager.posit.co/cran/latest",
@@ -4086,13 +4095,13 @@
   },
   "files": {
     "app.R": {
-      "checksum": "343388a9bb42576abe20b8c684141506"
+      "checksum": "4a1e473e4c00145fb82b5c7c792b5692"
     },
     "R/analysis.R": {
       "checksum": "65e4a516b7ae91cf44564404a78273ce"
     },
     "R/appearance.R": {
-      "checksum": "1e309cf43cea91f766b72822d4628606"
+      "checksum": "61938144855fcd3fe48d82a1575031a9"
     },
     "R/mtt_data_entry.R": {
       "checksum": "14c6b26d0f58843f200859b3ef03093b"

@@ -65,7 +65,7 @@ ldj_ensure_series <- function(state,series) {
   colors <- ldj_palette_catalog()[[state$palette]]$colors
   canonical <- c("DTG","Letermovir","CDQ","Lopinavir")
   for(key in missing) {
-    index <- if(key%in%canonical) match(key,canonical) else (length(state$series) %% length(colors))+1L
+    index <- if(key %in% paste("Compuesto",LETTERS[1:4])) match(key,paste("Compuesto",LETTERS[1:4])) else if(key%in%canonical) match(key,canonical) else (length(state$series) %% length(colors))+1L
     state$series[[key]] <- colors[index]
   }
   state

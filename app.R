@@ -43,40 +43,50 @@ demo_data <- local({
 
 # Formula-generated teaching examples. No experimental input is used.
 editorial_example <- function(module) {
+  stopifnot(module %in% c("mtt","activity","safety"))
+  if(module=="safety") {
+    viability <- editorial_example("mtt")
+    activity <- editorial_example("activity")
+    parameters <- lapply(unique(viability$Compuesto),function(key) {
+      fits <- lapply(list(CC20=list(viability,80),CC50=list(viability,50),IC50=list(activity,50)),function(spec) {
+        z <- spec[[1]]
+        z <- z[z$Compuesto==key & z$control_type=="treatment",]
+        fit_response(data.frame(dose=z$Concentracion_uM,response=z$Viabilidad_pct),target=spec[[2]])$table
+      })
+      z <- do.call(rbind,fits)
+      unit <- if(key=="Compuesto C") "nM" else "uM"
+      data.frame(Compuesto=key,parameter=rownames(z),unit=unit,
+        estimate=ldj_convert_concentration(z$estimate,"uM",unit),
+        lower=ldj_convert_concentration(z$lower,"uM",unit),
+        upper=ldj_convert_concentration(z$upper,"uM",unit),
+        provenance=ifelse(rownames(z)=="IC50","Ajuste 4PL · actividad sintética","Ajuste 4PL · MTT sintético"))
+    })
+    params <- do.call(rbind,parameters)
+    for(name in setdiff(names(params),names(viability))) viability[[name]] <- NA
+    for(name in setdiff(names(viability),names(params))) params[[name]] <- NA
+    return(rbind(viability,params[,names(viability)]))
+  }
   activity <- identical(module,"activity")
-  d <- expand.grid(Concentracion_uM=c(.025,.08,.25,.8,2.5,8,25),
-    Replica=1:3,Compuesto=paste("Serie sintética",LETTERS[1:4]),
-    KEEP.OUT.ATTRS=FALSE,stringsAsFactors=FALSE)
-  midpoint <- c(.55,1.8,4.4,7)[match(d$Compuesto,unique(d$Compuesto))]
-  d$Viabilidad_pct <- 5+95/(1+(d$Concentracion_uM/midpoint)^1.35)+
-    c(-1.8,.2,1.6)[d$Replica]*rep(c(.7,1.1,1.8),length.out=nrow(d))
+  compounds <- paste("Compuesto",LETTERS[1:4])
+  d <- expand.grid(Concentracion_uM=c(.005,.025,.125,.625,3.125,15.625,78.125),
+    Replica=1:4,Compuesto=compounds,KEEP.OUT.ATTRS=FALSE,stringsAsFactors=FALSE)
+  series <- match(d$Compuesto,compounds)
+  midpoint <- if(activity) c(.09,.85,2.6,9)[series] else c(3.1,5.5,12,2.2)[series]
+  spread <- c(1.1,1.8,2.4,1.5)[series] * (1+.35*cos(log(d$Concentracion_uM)))
+  d$Viabilidad_pct <- 4+96/(1+(d$Concentracion_uM/midpoint)^1.25)+
+    c(-1.35,-.4,.55,1.2)[d$Replica]*spread
   d$control_type <- "treatment"
-  d$observation_id <- paste0(module,"-T",seq_len(nrow(d)))
+  controls <- expand.grid(Concentracion_uM=NA_real_,Replica=1:4,Compuesto=compounds,
+    control_type=if(activity) c("infected_untreated","vehicle") else "untreated",
+    KEEP.OUT.ATTRS=FALSE,stringsAsFactors=FALSE)
+  controls$Viabilidad_pct <- 100+c(-2,-.5,.7,1.8)[controls$Replica]
+  d <- rbind(d,controls[,names(d)])
+  d$observation_id <- paste0(module,"-",seq_len(nrow(d)))
   d$independent_unit_id <- d$observation_id
   d$experiment_id <- paste0("SYNTHETIC-",toupper(module))
   d$control_source <- "Generador sintético LDJ"
-  d$inference_eligible <- TRUE
-  if(activity) {
-    ctrl <- d[seq_len(12),]
-    ctrl$Compuesto <- rep(unique(d$Compuesto),each=3)
-    ctrl$Concentracion_uM <- NA_real_
-    ctrl$Viabilidad_pct <- rep(c(96,99,101),4)
-    ctrl$control_type <- "infected_untreated"
-    ctrl$observation_id <- paste0("activity-C",seq_len(nrow(ctrl)))
-    ctrl$independent_unit_id <- ctrl$observation_id
-    d <- rbind(d,ctrl)
-    return(d)
-  }
-  z <- d[seq_len(12),]
-  z$Compuesto <- rep(unique(d$Compuesto),each=3)
-  z$parameter <- rep(c("IC50","CC20","CC50"),4)
-  z$unit <- rep(c("uM","uM","nM","uM"),each=3)
-  z$estimate <- c(.035,.32,.57, .38,.78,1.8, 105,1720,4430, 5,2,7.2)
-  z$lower <- z$upper <- NA_real_
-  z$Concentracion_uM <- z$Viabilidad_pct <- NA_real_
-  d$parameter <- d$unit <- NA_character_
-  d$estimate <- d$lower <- d$upper <- NA_real_
-  rbind(d,z)
+  d$inference_eligible <- d$control_type!="vehicle"
+  d
 }
 
 palette_ldj <- function(n, palette) {
@@ -282,11 +292,16 @@ downloadButton("config", "Configuración JSON")
         class = "help-note", style = "margin-top: 12px;")
     ),
     mainPanel(width = 9, class="main-panel",
+      textOutput("demo_indicator"),
       conditionalPanel("input.inspector === 'Datos'",
         wellPanel(h3("1. Datos"),selectInput("entry_type","Tipo de entrada",
           c("Observaciones individuales"="observations","Parámetros resumidos"="parameters")),
           actionButton("blank_table","Nueva tabla en blanco"),
-          actionButton("load_example","Cargar ejemplo"),
+          actionButton("load_example","Cargar ejemplo del módulo"),
+          actionButton("restore_example","Restaurar ejemplo"),
+          actionButton("restore_project","Volver a mi tabla"),
+          downloadButton("example_csv","Datos de ejemplo CSV"),
+          downloadButton("example_xlsx","Datos de ejemplo XLSX"),
           helpText("Edite celdas, pegue rangos o use el menú contextual para eliminar filas y columnas."),
           rHandsontableOutput("grid"),textOutput("table_state"),
           actionButton("confirm_table","Confirmar tabla y pasar a Análisis"))),
@@ -330,7 +345,7 @@ server <- function(input, output, session) {
   })
   color_series <- reactive({
     if(identical(figure_template(),"mtt4x2") && !isTRUE(input$mtt_user_data))
-      return(ldj_mtt_defaults()$order)
+      return(if(original_example("mtt")) unique(get_example("mtt")$Compuesto) else ldj_mtt_defaults()$order)
     if(is.null(input$group)||input$group==".none"||!input$group%in%names(dataset())) return("Datos")
     z <- as.character(dataset()[[input$group]]);sort(unique(z[!is.na(z)&nzchar(z)]))
   })
@@ -464,6 +479,13 @@ server <- function(input, output, session) {
     if(is.null(key)) return(NULL)
     p(switch(key,mtt="Citotoxicidad MTT",activity="Actividad farmacológica",safety="Potencia y seguridad"))
   })
+  mtt_editable_example <- reactive({
+    req(original_example("mtt"))
+    d <- get_example("mtt")
+    ldj_mtt_analyze_table(d,"Concentracion_uM","Viabilidad_pct","Compuesto",unique(d$Compuesto),
+      "uM",input$model,inference=identical(input$mtt_inference,"anova"),
+      reference=input$mtt_reference %||% "untreated",independent=TRUE)
+  })
   mtt_result <- reactive({
     req(figure_template()=="mtt4x2",input$font_size,input$palette,input$dispersion)
     b <- if(isTRUE(input$mtt_user_data)) list(synthetic=FALSE) else mtt_bundle(); pal <- ldj_mtt_defaults()$palette
@@ -482,6 +504,10 @@ server <- function(input, output, session) {
       plot_width=input$width,plot_height=input$height,dpi=as.integer(input$dpi),appearance=appearance(),
       show_significance=input$mtt_significance,show_anova=input$mtt_anova_summary,show_ns=input$mtt_show_ns,
       significance_offset=input$mtt_mark_offset,significance_size=input$mtt_mark_size)
+    if(original_example("mtt")) {
+      result <- ldj_mtt_display_unit(mtt_editable_example(),input$mtt_display_unit)
+      return(ldj_mtt_table_figure(result,cfg))
+    }
     if(isTRUE(b$synthetic)) {
       cfg$short <- stats::setNames(paste("Ejemplo",LETTERS[1:4]),ldj_mtt_defaults()$order)
       cfg$label_significance <- FALSE
@@ -502,6 +528,7 @@ server <- function(input, output, session) {
   })
   current_mtt_report <- reactive({
     req(identical(figure_template(),"mtt4x2"))
+    if(original_example("mtt")) return(ldj_mtt_inference_report(mtt_editable_example()))
     if(!isTRUE(input$mtt_user_data) && identical(input$mtt_source,"synthetic") &&
        identical(input$mtt_inference,"anova") && identical(input$mtt_reference,"untreated"))
       return(mtt_demo_inference())
@@ -538,6 +565,7 @@ server <- function(input, output, session) {
   })
   output$mtt_data <- renderTable({req(figure_template()=="mtt4x2");
     if(isTRUE(input$mtt_user_data)) {req(table_result()); return(head(do.call(rbind,lapply(table_result()$rows,`[[`,"data")),60))}
+    if(original_example("mtt")) return(head(dataset(),60))
     head(mtt_bundle()$orig,60)})
   output$plot_container <- renderUI({
     key <- editorial_module()
@@ -557,13 +585,34 @@ server <- function(input, output, session) {
   source_data <- reactiveVal(demo_data)
   working <- reactiveVal(demo_data)
   dataset <- reactive(working())
+  examples <- reactiveVal(list())
+  get_example <- function(key) {
+    if(!key %in% c("mtt","activity","safety")) return(demo_data)
+    cache <- isolate(examples())
+    if(is.null(cache[[key]])) {
+      cache[[key]] <- editorial_example(key)
+      examples(cache)
+    }
+    cache[[key]]
+  }
+  original_example <- function(key) identical(example_module(),key) &&
+    !manual() && identical(dataset(),get_example(key))
+  project <- reactiveVal(NULL)
+  output$demo_indicator <- renderText({
+    if(!is.null(example_module())) "Demostración · datos sintéticos" else
+      if(!manual() && identical(dataset(),demo_data)) "Demostración · datos sintéticos" else ""
+  })
+  output$example_csv <- downloadHandler(filename=function() paste0("LDJ-",input$module,"-sintetico.csv"),
+    content=function(file) write.csv(get_example(input$module),file,row.names=FALSE))
+  output$example_xlsx <- downloadHandler(filename=function() paste0("LDJ-",input$module,"-sintetico.xlsx"),
+    content=function(file) writexl::write_xlsx(list(Demostracion=get_example(input$module)),file))
   # Only the explicitly synthetic bundled fixture may auto-document an example fit.
   # Imported/manual data still require an independent model justification.
   demo_reason <- "Demostración sintética: ajuste 4PL para ilustrar la interfaz; revise la adecuación del modelo antes de usar datos experimentales."
   observeEvent(list(input$module, dataset()), {
     reason <- isolate(input$model_reason) %||% ""
     bundled <- identical(dataset(), demo_data) ||
-      (identical(example_module(),"activity") && identical(dataset(),editorial_example("activity")))
+      (original_example("activity"))
     if (identical(input$module, "activity") && bundled && !nzchar(trimws(reason))) {
       updateTextInput(session, "model_reason", value=demo_reason)
     } else if (!bundled && identical(reason, demo_reason)) {
@@ -584,6 +633,7 @@ server <- function(input, output, session) {
       data.frame(group="",parameter="",estimate="",lower="",upper="",unit="")
     else data.frame(concentration="",response="",group="",replicate="",control_type="",
       observation_id="",experiment_id="",control_source="",inference_eligible="",independent_unit_id="")
+    example_module(NULL)
     source_data(d)
     working(d)
     manual(TRUE)
@@ -596,10 +646,9 @@ server <- function(input, output, session) {
       updateSelectInput(session,"safety_display",selected="summary")
     }
   })
-  observeEvent(input$load_example, {
-    key <- isolate(input$module)
+  load_editorial_example <- function(key) {
     specialized <- key %in% c("activity","safety")
-    d <- if(specialized) editorial_example(key) else demo_data
+    d <- get_example(key)
     example_module(if(specialized) key else NULL)
     source_data(d)
     working(d)
@@ -618,6 +667,8 @@ server <- function(input, output, session) {
     updateCheckboxInput(session,"safety_table",value=identical(key,"safety"))
     if(identical(key,"mtt")) updateTextInput(session,"y_label",value="Viabilidad celular (%)")
     if(identical(key,"safety")) {
+      updateSelectInput(session,"cc20_source",selected="table")
+      updateCheckboxInput(session,"safety_show_si",value=TRUE)
       updateSelectInput(session,"safety_display",selected="editorial")
       updateTextInput(session,"y_label",value="Viabilidad celular (%)")
     }
@@ -628,6 +679,28 @@ server <- function(input, output, session) {
       updateTextInput(session,"y_label",value="Células infectadas (%)")
       updateTextInput(session,"model_reason",value=demo_reason)
     }
+  }
+  observeEvent(list(input$load_example,input$restore_example),{
+    if(is.null(example_module()) && !identical(dataset(),demo_data))
+      project(list(data=dataset(),source=source_data(),manual=manual(),draft=draft_pending()))
+    load_editorial_example(input$module)
+  },ignoreInit=TRUE)
+  observeEvent(input$module,{
+    if(input$module %in% c("mtt","activity","safety") && !manual() &&
+       (original_example(example_module() %||% "universal") || identical(dataset(),demo_data)))
+      load_editorial_example(input$module)
+  },ignoreInit=TRUE)
+  observeEvent(input$restore_project,{
+    saved <- project()
+    if(is.null(saved)) return()
+    example_module(NULL)
+    working(saved$data)
+    source_data(saved$source)
+    manual(saved$manual)
+    draft_pending(saved$draft)
+    manual_snapshot(NULL)
+    updateCheckboxInput(session,"mtt_user_data",value=TRUE)
+    updateCheckboxInput(session,"safety_table",value="parameter" %in% names(saved$data))
   })
   confirm_grid <- function() {
     d <- ldj_mtt_normalize_numeric(grid_data(),input$decimal %||% ".")
@@ -652,7 +725,7 @@ server <- function(input, output, session) {
     draft_pending(FALSE)
   }
   observeEvent(input$grid, {
-    if(!manual()) return()
+    if(!manual() && is.null(example_module())) return()
     d <- tryCatch(ldj_mtt_normalize_numeric(grid_data(),input$decimal %||% "."),
       error=function(e) NULL)
     if(!is.null(d)) {
@@ -662,7 +735,14 @@ server <- function(input, output, session) {
         x[is.na(x)] <- ""
         x
       })
-      draft_pending(!identical(canonical(d),canonical(current)))
+      changed <- !identical(canonical(d),canonical(current))
+      if(changed && !manual()) {
+        manual(TRUE)
+        manual_snapshot(NULL)
+        updateCheckboxInput(session,"independent",value=FALSE)
+        if(identical(input$module,"mtt")) updateCheckboxInput(session,"mtt_user_data",value=TRUE)
+      }
+      draft_pending(changed)
     }
   },ignoreInit=TRUE)
   observeEvent(input$confirm_table, {
@@ -709,7 +789,7 @@ server <- function(input, output, session) {
           header=!identical(input$has_header,FALSE),
           decimal=if(is.null(input$decimal)) "." else input$decimal,
           separator=if(is.null(input$separator)) "," else if(identical(input$separator,"\\t")) "\t" else input$separator)
-        source_data(d); working(d)
+        example_module(NULL); source_data(d); working(d)
       }
     },error=function(e) showNotification(conditionMessage(e),type="error",duration=NULL))
   })
@@ -720,7 +800,7 @@ server <- function(input, output, session) {
       d <- ldj_mtt_import_table(input$upload$datapath,input$upload$name,
         sheet=input$sheet,header=!identical(input$has_header,FALSE),
         decimal=if(is.null(input$decimal)) "." else input$decimal)
-      source_data(d); working(d)
+      example_module(NULL); source_data(d); working(d)
     },error=function(e) showNotification(conditionMessage(e),type="error",duration=NULL))
   })
   observeEvent(input$apply_paste, {
@@ -728,7 +808,7 @@ server <- function(input, output, session) {
       d <- ldj_mtt_paste_table(input$paste_tsv,
         header=!identical(input$has_header,FALSE),
         decimal=if(is.null(input$decimal)) "." else input$decimal)
-      source_data(d); working(d)
+      example_module(NULL); source_data(d); working(d)
     },error=function(e) showNotification(conditionMessage(e),type="error",duration=NULL))
   })
   observeEvent(list(dataset(),input$x,input$y,input$group), {
@@ -834,7 +914,7 @@ server <- function(input, output, session) {
     }
     req(selection_ready())
     reason <- trimws(input$model_reason %||% "")
-    teaching_example <- identical(example_module(),"activity") && identical(dataset(),editorial_example("activity"))
+    teaching_example <- original_example("activity")
     if(!nzchar(reason) || (identical(reason,demo_reason) && !identical(dataset(),demo_data) && !teaching_example))
       shiny::validate(shiny::need(FALSE,
         "Antes de ajustar la curva, abra Análisis, justifique el modelo 3PL/4PL y pulse Ejecutar análisis."))
@@ -1093,7 +1173,7 @@ server <- function(input, output, session) {
     d$.series_key <- if(input$group==".none") "Datos" else as.character(d[[input$group]])
     keys <- unique(as.character(estimates$series))
     validate(need(length(keys)<=4,"El diseño editorial admite hasta cuatro series. Use la vista universal para más series."))
-    teaching_example <- identical(example_module(),"activity") && identical(dataset(),editorial_example("activity"))
+    teaching_example <- original_example("activity")
     experiment <- if(teaching_example) "SYNTHETIC-ACTIVITY" else input$experiment_id
     confirmed <- teaching_example || isTRUE(input$independent)
     rows <- lapply(keys,function(key) {
