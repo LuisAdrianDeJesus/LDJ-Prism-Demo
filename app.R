@@ -702,11 +702,13 @@ server <- function(input, output, session) {
       updateTextInput(session,"model_reason",value=demo_reason)
     }
   }
-  observeEvent(list(input$load_example,input$restore_example),{
+  select_demo <- function() {
     if(is.null(example_module()) && !identical(dataset(),demo_data))
       project(list(data=dataset(),source=source_data(),manual=manual(),draft=draft_pending()))
     load_editorial_example(input$module)
-  },ignoreInit=TRUE)
+  }
+  observeEvent(input$load_example,select_demo())
+  observeEvent(input$restore_example,select_demo())
   observeEvent(input$module,{
     key <- input$module
     if(identical(key,"safety") && identical(input$safety_display,"summary")) return()
@@ -764,13 +766,14 @@ server <- function(input, output, session) {
   }
   observeEvent(input$grid, {
     if(!manual() && is.null(example_module())) return()
+    changes <- input$grid$changes
+    if(identical(changes$event,"afterChange") && is.null(changes$changes)) return()
+    if(is.null(changes$event)) return()
     d <- tryCatch(ldj_mtt_normalize_numeric(grid_data(),input$decimal %||% "."),
       error=function(e) NULL)
-    if(!is.null(d)) {
-      changed <- !identical(grid_values(d),grid_values(working()))
-      if(changed) mark_edited_example()
-      draft_pending(changed)
-    }
+    changed <- is.null(d) || !identical(grid_values(d),grid_values(working()))
+    if(changed) mark_edited_example()
+    draft_pending(changed)
   },ignoreInit=TRUE)
   observeEvent(input$confirm_table, {
     tryCatch({
@@ -869,7 +872,8 @@ server <- function(input, output, session) {
     else paste(nrow(m),"asignaciones visuales; los controles físicos permanecen únicos.")
   })
   output$grid <- renderRHandsontable({
-    rhandsontable(working(), readOnly=FALSE, rowHeaders=TRUE, stretchH="all",contextMenu=TRUE,useTypes=FALSE)
+    rhandsontable(working(), readOnly=FALSE, rowHeaders=TRUE, stretchH="all",contextMenu=TRUE,useTypes=FALSE,
+      height=520)
   })
   observeEvent(input$apply_grid, {
     req(input$grid)

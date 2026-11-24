@@ -287,7 +287,9 @@ tryCatch({
         marker <- if(example=="safety") "80–100% viable" else "ANOVA F"
         metric <- if(example=="mtt") "CC50" else "IC50"
         stopifnot(sum(grepl(marker,svg,fixed=TRUE))>=4,
-          sum(grepl(metric,svg,fixed=TRUE))>=4)
+          sum(grepl(metric,svg,fixed=TRUE))>=4,
+          all(vapply(paste("Compuesto",LETTERS[1:4]),function(name)
+            any(grepl(name,svg,fixed=TRUE)),logical(1))))
       }
     }
     app$set_inputs(inspector="Ejes",x_label="Concentración (µM)")
@@ -311,8 +313,9 @@ tryCatch({
   app$wait_for_js("document.querySelector('#demo_indicator')?.textContent.includes('datos sintéticos')",timeout=60000)
   app$wait_for_js("!HTMLWidgets.find('#grid')?.hot?.getColHeader().includes('parameter') && HTMLWidgets.find('#grid')?.hot?.getDataAtCell(0,2) === 'Compuesto A'",timeout=60000)
   capture("demo-grid-mtt.png")
-  app$run_js("var demoHot = HTMLWidgets.find('#grid').hot; demoHot.setDataAtCell(0,demoHot.getColHeader().indexOf('Viabilidad_pct'),77,'edit')")
-  app$wait_for_js("document.querySelector('#table_state')?.textContent.includes('Confirme los cambios')",timeout=30000)
+  app$run_js("var demoHot = HTMLWidgets.find('#grid').hot; demoHot.setDataAtCell(0,demoHot.getColHeader().indexOf('Viabilidad_pct'),'77','edit')")
+  app$wait_for_js("String(HTMLWidgets.find('#grid')?.hot?.getDataAtCell(0,3)) === '77'",timeout=30000)
+  app$wait_for_idle(timeout=90000)
   app$click("confirm_table")
   app$wait_for_js("document.querySelector('a[data-value=Análisis]')?.parentElement.classList.contains('active')",timeout=30000)
   stopifnot(!app$get_value(input="independent"))
