@@ -142,9 +142,10 @@ ldj_cc20_sources <- function(table, fit, tolerance = 10) {
 
 ldj_safety_editorial_plot <- function(result,state,unit,measure="SD",title="",x_label=NULL,y_label=NULL,cc20_source="table",cc20_tolerance=10,show_fit=FALSE,
                                       viability_label="80–100% viable",panel_styles=list(),
-                                      font_size=12,font_family="sans",show_si=FALSE) {
+                                      font_size=12,font_family="sans",show_si=FALSE,english=FALSE) {
   stopifnot(cc20_source %in% c("table","regression","both"),is.finite(cc20_tolerance),cc20_tolerance>=0)
   label_unit <- if(unit %in% c("uM","μM")) "µM" else unit
+  dose_label <- if(english) "Concentration" else "Concentración"
   plots <- list()
   for(i in seq_along(result$rows)) {
     row <- result$rows[[i]]; key <- row$series; tags <- LETTERS[c(2*i-1,2*i)]
@@ -191,8 +192,8 @@ ldj_safety_editorial_plot <- function(result,state,unit,measure="SD",title="",x_
         size=lc$point_size %||% sf$point_size %||% 2,fill=sf$curve,colour=sf$point)+
       ggplot2::geom_hline(yintercept=80,linetype="dashed",colour=sf$reference,alpha=sf$reference_alpha %||% 1)+
       (if(identical(lc$x_scale,"linear")) ggplot2::scale_x_continuous() else ggplot2::scale_x_log10())+
-      ldj_plot_theme(sf,lc$font_size %||% font_size,font_family)+ggplot2::labs(title=lc$title %||% paste(tags[1],key,"· Viabilidad"),
-        x=lc$x_label %||% x_label %||% paste0("Concentración (",label_unit,")"),
+      ldj_plot_theme(sf,lc$font_size %||% font_size,font_family)+ggplot2::labs(title=lc$title %||% paste(tags[1],key,if(english) "· Viability" else "· Viabilidad"),
+        x=lc$x_label %||% x_label %||% paste0(dose_label," (",label_unit,")"),
         y=lc$y_label %||% y_label %||% "Viabilidad (%)",caption=lc$annotation,
         subtitle=paste(c(source_label,if(!is.null(row$fit$error)) "Curva de ajuste: ND"),collapse="\n"))
     if(nrow(sums)>1L && identical(state$preset,"editorial")) left <- left+
@@ -243,8 +244,8 @@ ldj_safety_editorial_plot <- function(result,state,unit,measure="SD",title="",x_
       (if(identical(rc$x_scale,"linear")) ggplot2::scale_x_continuous(expand=ggplot2::expansion(mult=.25)) else
         ggplot2::scale_x_log10(expand=ggplot2::expansion(mult=.25)))+
       ggplot2::coord_cartesian(xlim=rc$x_limits)+ldj_plot_theme(sp,rc$font_size %||% font_size,font_family)+
-      ggplot2::labs(title=rc$title %||% paste(tags[2],key,"· Parámetros"),
-        x=rc$x_label %||% paste0("Concentración (",label_unit,")"),y=rc$y_label,caption=rc$annotation,
+      ggplot2::labs(title=rc$title %||% paste(tags[2],key,if(english) "· Parameters" else "· Parámetros"),
+        x=rc$x_label %||% paste0(dose_label," (",label_unit,")"),y=rc$y_label,caption=rc$annotation,
         subtitle=if(length(notes)) paste(notes,collapse="\n") else "Franja: separación descriptiva IC50–CC20")
     plots <- c(plots,list(left,right))
   }

@@ -287,6 +287,15 @@ tryCatch({
           sum(grepl(metric,svg,fixed=TRUE))>=4)
       }
     }
+    app$set_inputs(inspector="Ejes",x_label="Concentración (µM)")
+    app$set_inputs(inspector="Editor de paneles",figure_language="en")
+    app$set_inputs(inspector="Exportar")
+    language_svg <- tempfile(fileext=".svg")
+    app$get_download("svg",filename=language_svg)
+    labels <- readLines(language_svg,warn=FALSE)
+    stopifnot(any(grepl("Concentration",labels,fixed=TRUE)))
+    unlink(language_svg)
+    app$set_inputs(figure_language="es")
     app$set_inputs(visual_preset="minimal")
     for(fmt in c("svg","pdf","png")) {
       file <- file.path("test-artifacts",paste0("minimal-example-",example,".",fmt))
@@ -295,6 +304,22 @@ tryCatch({
     }
     app$set_inputs(visual_preset="editorial")
   }
+  app$set_inputs(module="mtt",inspector="Datos")
+  app$wait_for_js("document.querySelector('#demo_indicator')?.textContent.includes('datos sintéticos')",timeout=60000)
+  app$wait_for_js("HTMLWidgets.find('#grid')?.hot?.getDataAtCell(0,2) === 'Compuesto A'",timeout=60000)
+  capture("demo-grid-mtt.png")
+  app$run_js("HTMLWidgets.find('#grid').hot.setDataAtCell(0,1,77,'edit')")
+  app$wait_for_idle()
+  app$click("confirm_table")
+  app$wait_for_idle()
+  stopifnot(!app$get_value(input="independent"))
+  app$set_inputs(module="activity",inspector="Datos")
+  app$wait_for_js("String(HTMLWidgets.find('#grid')?.hot?.getDataAtCell(0,1)) === '77'",timeout=60000)
+  app$set_inputs(module="mtt",inspector="Datos")
+  app$wait_for_js("String(HTMLWidgets.find('#grid')?.hot?.getDataAtCell(0,1)) === '77'",timeout=60000)
+  app$click("restore_example")
+  app$wait_for_js("HTMLWidgets.find('#grid')?.hot?.getDataAtCell(0,2) === 'Compuesto A' && String(HTMLWidgets.find('#grid').hot.getDataAtCell(0,1)) !== '77'",timeout=60000)
+  cat("Edited demonstration remains available when changing modules: PASS\n")
   cat("Synthetic editorial and minimal examples for all three modules: PASS\n")
 },finally=app$stop())
 

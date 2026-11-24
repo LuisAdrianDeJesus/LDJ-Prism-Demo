@@ -213,6 +213,7 @@ selectInput("preset", "Preset LDJ-FIG v2.0", c("Color accesible"="color", "Blanc
 actionButton("apply_preset", "Aplicar preset"), helpText("Propuestas de estilo; pendientes de comparación con figuras de referencia.")
 ),
 tabPanel("Editor de paneles",
+selectInput("figure_language","Idioma de etiquetas predeterminadas",c("Español"="es","English"="en")),
 conditionalPanel("input.module !== 'universal'", uiOutput("editor_context")),
 p("Las opciones gráficas no recalculan modelos ni comparaciones. La demo usa resultados calculados exclusivamente de datos sintéticos."),
 selectInput("mtt_target","Aplicar estilo a",c("Todos los paneles"="all",LETTERS[1:8])),
@@ -486,6 +487,15 @@ server <- function(input, output, session) {
       "uM",input$model,inference=identical(input$mtt_inference,"anova"),
       reference=input$mtt_reference %||% "untreated",independent=TRUE)
   })
+  figure_labels <- reactive({
+    english <- identical(input$figure_language,"en")
+    x <- input$x_label
+    y <- input$y_label
+    if(english && identical(x,"Concentración (µM)")) x <- "Concentration (µM)"
+    if(english && identical(y,"Viabilidad celular (%)")) y <- "Cell viability (%)"
+    if(english && identical(y,"Células infectadas (%)")) y <- "Infected cells (%)"
+    list(x=x,y=y,english=english)
+  })
   mtt_result <- reactive({
     req(figure_template()=="mtt4x2",input$font_size,input$palette,input$dispersion)
     b <- if(isTRUE(input$mtt_user_data)) list(synthetic=FALSE) else mtt_bundle(); pal <- ldj_mtt_defaults()$palette
@@ -496,7 +506,7 @@ server <- function(input, output, session) {
       if(!is.null(v) && grepl("^#[[:xdigit:]]{6}$",v)) colors[i] <- v
     }
     pal[ldj_mtt_defaults()$order] <- colors
-    cfg <- list(palette=pal,figure_title=input$plot_title,x_label=input$x_label,y_label=input$y_label,
+    cfg <- list(palette=pal,figure_title=input$plot_title,x_label=figure_labels()$x,y_label=figure_labels()$y,
       control_label=input$control_label_default,
       font_size=input$font_size,font_family=input$font_family,show_points=input$points,
       point_shape=as.integer(input$point_shape),point_size=input$point_size,
@@ -506,6 +516,10 @@ server <- function(input, output, session) {
       significance_offset=input$mtt_mark_offset,significance_size=input$mtt_mark_size)
     if(original_example("mtt")) {
       result <- ldj_mtt_display_unit(mtt_editable_example(),input$mtt_display_unit)
+      if(input$x_label=="Concentración (µM)") {
+        unit <- if(result$unit=="uM") "µM" else result$unit
+        cfg$x_label <- paste0(if(figure_labels()$english) "Concentration" else "Concentración"," (",unit,")")
+      }
       return(ldj_mtt_table_figure(result,cfg))
     }
     if(isTRUE(b$synthetic)) {
@@ -521,7 +535,8 @@ server <- function(input, output, session) {
       validate(need(!is.null(table_result()),"Ejecute el análisis de la tabla."),
         need(identical(table_snapshot(),analysis_signature()),"Datos o configuración modificados: vuelva a ejecutar el análisis."))
       cfg$x_label <- if(identical(input$x_label,"Concentración (µM)"))
-         paste0("Concentración (",if(input$mtt_display_unit=="uM") "µM" else input$mtt_display_unit,")") else input$x_label
+         paste0(if(figure_labels()$english) "Concentration (" else "Concentración (",
+           if(input$mtt_display_unit=="uM") "µM" else input$mtt_display_unit,")") else figure_labels()$x
       return(ldj_mtt_table_figure(ldj_mtt_display_unit(table_result(),input$mtt_display_unit),cfg))
     }
     ldj_mtt_editor_build(b,cfg)
@@ -665,7 +680,14 @@ server <- function(input, output, session) {
     updateSelectInput(session,"mtt_source",selected="synthetic")
     updateCheckboxInput(session,"mtt_user_data",value=FALSE)
     updateCheckboxInput(session,"safety_table",value=identical(key,"safety"))
-    if(identical(key,"mtt")) updateTextInput(session,"y_label",value="Viabilidad celular (%)")
+    if(specialized) updateCheckboxInput(session,"independent",value=FALSE)
+    if(identical(key,"mtt")) {
+      updateSelectInput(session,"mtt_view",selected="editorial")
+      updateSelectInput(session,"mtt_inference",selected="anova")
+      updateSelectInput(session,"mtt_reference",selected="untreated")
+      updateSelectInput(session,"threshold_mode",selected="absolute")
+      updateTextInput(session,"y_label",value="Viabilidad celular (%)")
+    }
     if(identical(key,"safety")) {
       updateSelectInput(session,"cc20_source",selected="table")
       updateCheckboxInput(session,"safety_show_si",value=TRUE)
@@ -1199,9 +1221,11 @@ server <- function(input, output, session) {
     if(identical(figure_template(),"mtt4x2")) return(mtt_result()$figure)
     if(identical(input$module,"safety") && identical(input$safety_display,"editorial"))
       return(ldj_safety_editorial_plot(safety_editorial_result(),appearance(),input$safety_unit,input$dispersion,
-        input$plot_title,y_label=input$y_label,cc20_source=input$cc20_source %||% "table",
+        input$plot_title,y_label=figure_labels()$y,cc20_source=input$cc20_source %||% "table",
         cc20_tolerance=input$cc20_tolerance %||% 10,
-        show_fit=isTRUE(input$safety_show_fit),viability_label=input$safety_viability_label,
+        show_fit=isTRUE(input$safety_show_fit),
+        viability_label=if(figure_labels()$english && identical(input$safety_viability_label,"80–100% viable"))
+          "80–100% viable cells" else input$safety_viability_label,english=figure_labels()$english,
         panel_styles=mtt_styles(),font_size=input$font_size,font_family=input$font_family,show_si=isTRUE(input$safety_show_si)))
     if(identical(input$module,"safety")) return(ldj_safety_plot(analysis()$table,appearance(),
       input$safety_unit %||% "uM",input$plot_title,input$font_size,input$font_family,isTRUE(input$grid_lines)))
@@ -1215,8 +1239,10 @@ server <- function(input, output, session) {
         show_significance=isTRUE(input$mtt_significance),show_anova=isTRUE(input$mtt_anova_summary),
         show_ns=isTRUE(input$mtt_show_ns),significance_size=input$mtt_mark_size,
         significance_offset=input$mtt_mark_offset,
-        x_label=if(identical(input$x_label,"Concentración (µM)")) paste0("Concentración (",input$unit,")") else input$x_label,
-        y_label=input$y_label,figure_title=input$plot_title,panels=mtt_styles(),grid=isTRUE(input$grid_lines),
+        x_label=if(identical(input$x_label,"Concentración (µM)"))
+          paste0(if(figure_labels()$english) "Concentration (" else "Concentración (",
+            if(input$unit=="uM") "µM" else input$unit,")") else figure_labels()$x,
+        y_label=figure_labels()$y,figure_title=input$plot_title,panels=mtt_styles(),grid=isTRUE(input$grid_lines),
         y_limits=NULL))$figure)
     }
     p <- plot_builder()
