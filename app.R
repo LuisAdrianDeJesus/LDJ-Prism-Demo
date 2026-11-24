@@ -196,7 +196,7 @@ tags$details(id="advanced_analysis",tags$summary("Configuración avanzada · ANO
   conditionalPanel("input.provenance_choice === 'custom'",
     textInput("control_source","Procedencia personalizada","")),
   selectInput("unit_id_field","Columna de unidad experimental independiente",choices=c("independent_unit_id")),
-  helpText("Use una unidad física por réplica. Crear un identificador administrativo no acredita independencia ni procedencia."),
+  helpText("Use control_set_id para registrar explícitamente un conjunto de controles compartidos. Use una unidad física por réplica. Crear un identificador administrativo no acredita independencia ni procedencia."),
   checkboxInput("independent", "Confirmo réplicas independientes y control del mismo experimento", FALSE),
   numericInput("control", "Concentración del control", 0, min=0),
   conditionalPanel("input.module === 'mtt'",
@@ -774,11 +774,13 @@ server <- function(input, output, session) {
     control_names <- c(untreated="No tratado",infected_untreated="Infectado sin tratamiento",
       vehicle="Vehículo",negative="Control negativo",positive="Control positivo")
     types <- intersect(names(control_names),values(d$control_type[controls]))
+    physical_choices <- ldj_control_reference_choices(d)
     for(id in c("mtt_reference","activity_control_type")) {
       preferred <- if(id=="mtt_reference") "untreated" else "infected_untreated"
       previous <- isolate(input[[id]]) %||% ""
       choices <- if(length(types)) stats::setNames(types,control_names[types]) else c("Sin control físico en la tabla"="")
-      selected <- if(preferred %in% types) preferred else if(previous %in% types) previous else
+      choices <- c(choices,physical_choices)
+      selected <- if(previous %in% unname(physical_choices)) previous else if(preferred %in% types) preferred else if(previous %in% types) previous else
         if(length(types)) types[1] else ""
       updateSelectInput(session,id,choices=choices,selected=selected)
     }

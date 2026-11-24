@@ -5,7 +5,7 @@ ldj_mtt_normalize_numeric <- function(d, decimal = ".") {
   if (!decimal %in% c(".", ",")) stop("Separador decimal no admitido.")
   if (!is.data.frame(d) || !ncol(d)) stop("La tabla debe tener columnas.")
   identifiers <- c("observation_id", "independent_unit_id", "record_id", "experiment_id", "control_source",
-    "control_type", "control_label", "inference_eligible", "control_series",
+    "control_type", "control_label", "control_set_id", "inference_eligible", "control_series",
     "concentration_unit", "Compuesto", "Series", "drug", "series")
   for (name in setdiff(names(d), identifiers)) {
     v <- d[[name]]
@@ -114,4 +114,54 @@ ldj_mtt_apply_control_map <- function(physical, group, series, assignments) {
   attr(physical, "control_contexts") <- unique(data.frame(key = keys,
     series = a$series, stringsAsFactors = FALSE))
   physical
+}
+
+# An explicit control_set_id groups physical units. A display label never
+# creates a group, and a set cannot cross experiment, type or provenance.
+ldj_control_reference_keys <- function(d) {
+  keys <- rep(NA_character_,nrow(d))
+  required <- c("experiment_id","observation_id","control_type","control_source")
+  if(!all(required %in% names(d))) return(keys)
+  ok <- Reduce("&",lapply(d[required],function(x) !is.na(x)&nzchar(trimws(as.character(x))))) &
+    d$control_type!="treatment"
+  if(!any(ok)) return(keys)
+  encode <- function(x) paste0(nchar(x,type="bytes"),":",x)
+  physical <- encode(as.character(d$observation_id[ok]))
+  if("control_set_id" %in% names(d)) {
+    set <- trimws(as.character(d$control_set_id[ok]))
+    use <- !is.na(set)&nzchar(set)
+    physical[use] <- paste0("set:",encode(set[use]))
+  }
+  keys[ok] <- paste0("physical:",encode(as.character(d$experiment_id[ok])),
+    encode(as.character(d$control_type[ok])),encode(as.character(d$control_source[ok])),physical)
+  keys
+}
+
+ldj_control_reference_choices <- function(d) {
+  keys <- ldj_control_reference_keys(d)
+  groups <- split(which(!is.na(keys)),keys[!is.na(keys)])
+  labels <- vapply(groups,function(i) {
+    z <- d[i,,drop=FALSE]
+    units <- as.character(z$independent_unit_id)
+    reported <- unique(units[!is.na(units)&nzchar(units)])
+    flag <- !is.na(z$inference_eligible) & tolower(as.character(z$inference_eligible)) %in% c("true","1")
+    label <- if("control_label" %in% names(z)) unique(na.omit(z$control_label)) else character()
+    label <- label[nzchar(label)]
+    id <- if("control_set_id" %in% names(z) && !is.na(z$control_set_id[1]) &&
+      nzchar(z$control_set_id[1])) z$control_set_id[1] else z$observation_id[1]
+    paste(paste(label,collapse=" / "),z$control_type[1],z$experiment_id[1],z$control_source[1],id,
+      paste(length(reported),"unidades registradas"),
+      if(length(flag) && all(flag) && length(reported)>=2L) "elegibilidad declarada" else "revisar elegibilidad",
+      sep=" · ")
+  },character(1))
+  setNames(as.character(names(groups)),unname(labels))
+}
+
+ldj_select_control_reference <- function(d,reference) {
+  if(!startsWith(reference,"physical:")) return(list(data=d,type=reference))
+  keys <- ldj_control_reference_keys(d)
+  matching <- d$.is_control & !is.na(keys) & keys==reference
+  if(!any(matching)) stop("El control físico seleccionado no está asignado a esta serie.")
+  type <- unique(d$.control_type[matching])
+  list(data=d[!d$.is_control | matching,,drop=FALSE],type=type)
 }

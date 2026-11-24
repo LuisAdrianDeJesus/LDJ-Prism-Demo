@@ -45,6 +45,10 @@ ldj_mtt_display_unit <- function(result, unit) {
 
 ldj_mtt_inference <- function(d,x,y,type="untreated",confirmed=FALSE) {
   unavailable <- function(reason) list(status=paste("Inferencia no disponible:",reason))
+  selected <- tryCatch(ldj_select_control_reference(d,type),error=function(e) e)
+  if(inherits(selected,"error")) return(unavailable(conditionMessage(selected)))
+  d <- selected$data
+  type <- selected$type
   if(!any(d$.is_control & d$.control_type==type))
     return(unavailable(paste("No hay control",type,"asignado a la serie.")))
   missing <- setdiff(c("control_type","observation_id","experiment_id","control_source",
@@ -124,7 +128,9 @@ ldj_mtt_analyze_table <- function(data, x, y, group, series, unit,
   ambiguous_ids <- character()
   ids_needed <- c("control_type","experiment_id","observation_id","independent_unit_id")
   if(isTRUE(inference) && all(ids_needed %in% names(canonical))) {
-    control_rows <- canonical$control_type == reference &
+    reference_rows <- if(startsWith(reference,"physical:"))
+      ldj_control_reference_keys(canonical) %in% reference else canonical$control_type==reference
+    control_rows <- reference_rows &
       !is.na(canonical$experiment_id) & nzchar(trimws(canonical$experiment_id)) &
       !is.na(canonical$observation_id) & nzchar(trimws(canonical$observation_id))
     controls <- canonical[which(control_rows),,drop=FALSE]
@@ -152,7 +158,9 @@ ldj_mtt_analyze_table <- function(data, x, y, group, series, unit,
     stats <- NULL
     if(isTRUE(inference)) {
       physical_ids <- paste(d$experiment_id,d$observation_id,sep="::")
-      stats <- if(any(physical_ids[d$.is_control & d$.control_type==reference] %in% ambiguous_ids))
+      chosen <- if(startsWith(reference,"physical:")) ldj_control_reference_keys(d) %in% reference else
+        d$.control_type==reference
+      stats <- if(any(physical_ids[d$.is_control & chosen] %in% ambiguous_ids))
         list(status="Inferencia no disponible: un control físico tiene unidades independientes contradictorias o faltantes.")
       else ldj_mtt_inference(d,x,y,reference,independent)
     }

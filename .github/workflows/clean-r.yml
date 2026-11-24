@@ -83,6 +83,7 @@ jobs:
           Rscript tests/mtt-editorial.R
           Rscript tests/mtt-inference.R
           Rscript tests/demo-regression.R
+          Rscript tests/style-controls.R
       - name: Chromium first-load and figure export tests
         run: |
           Rscript tests/startup-browser.R
