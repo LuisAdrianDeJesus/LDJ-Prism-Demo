@@ -41,6 +41,8 @@ tryCatch({
   app$wait_for_js("document.querySelector('#advanced_analysis').open",timeout=30000)
   screenshot("axis-advanced.png")
   app$run_js("document.querySelector('#advanced_analysis summary').click()")
+  app$run_js("document.querySelector('#mtt_statistics').closest('details').open=true")
+  app$wait_for_js("Boolean(document.querySelector('#mtt_statistics')?.getAttribute('href'))",timeout=30000)
   stat_before <- tempfile(fileext=".json")
   stat_after <- tempfile(fileext=".json")
   app$get_download("mtt_statistics",filename=stat_before)
@@ -56,6 +58,7 @@ tryCatch({
   app$get_download("svg",filename=path)
   stopifnot(any(grepl("recorte visual en Y",readLines(path,warn=FALSE),fixed=TRUE)))
   app$set_inputs(inspector="Análisis",wait_=FALSE)
+  app$wait_for_js("Boolean(document.querySelector('#mtt_statistics')?.getAttribute('href'))",timeout=30000)
   app$get_download("mtt_statistics",filename=stat_after)
   stopifnot(identical(readLines(stat_before,warn=FALSE),readLines(stat_after,warn=FALSE)))
   writeLines("MTT inference JSON is byte-identical after axis, dimensions and zoom edits.",
