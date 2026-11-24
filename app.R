@@ -416,7 +416,8 @@ server <- function(input, output, session) {
     if(is.null(input$group)||input$group==".none"||!input$group%in%names(dataset())) return("Datos")
     z <- as.character(dataset()[[input$group]]);sort(unique(z[!is.na(z)&nzchar(z)]))
   })
-  appearance <- ldj_color_server(input,output,session,color_series)
+  module_panel_styles <- reactiveVal(list())
+  appearance <- ldj_color_server(input,output,session,color_series,module_panel_styles)
   table_result <- reactiveVal(NULL)
   table_snapshot <- reactiveVal(NULL)
   mtt_control_map <- reactiveVal(NULL)
@@ -460,7 +461,6 @@ server <- function(input, output, session) {
     else if(!identical(table_snapshot(),analysis_signature())) "Datos o configuración modificados: vuelva a ejecutar el análisis antes de exportar."
     else "Análisis vigente; los cambios visuales conservan los ajustes."
   })
-  module_panel_styles <- reactiveVal(list())
   mtt_styles <- function(value) {
     module <- input$module %||% "mtt"
     all_styles <- module_panel_styles()

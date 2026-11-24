@@ -303,7 +303,7 @@ ldj_color_ui <- function() shiny::tagList(
   shiny::fileInput("colors_import","Importar colores JSON",accept=".json"),
   shiny::verbatimTextOutput("color_checks"),shiny::uiOutput("custom_color_inputs"))
 
-ldj_color_server <- function(input,output,session,series) {
+ldj_color_server <- function(input,output,session,series,panel_styles=NULL) {
   state <- shiny::reactiveVal(ldj_appearance()); saved <- shiny::reactiveVal(list())
   shiny::observeEvent(series(),{state(ldj_ensure_series(shiny::isolate(state()),series()))})
   shiny::observeEvent(input$visual_preset,{s <- state();s$preset <- input$visual_preset;state(s)},ignoreInit=TRUE)
@@ -361,7 +361,8 @@ ldj_color_server <- function(input,output,session,series) {
     ids <- c(names(fields$number),names(fields$select),fields$text,fields$logical)
     settings <- setNames(lapply(ids,function(id) input[[id]]),ids)
     settings <- Filter(Negate(is.null),settings)
-    jsonlite::write_json(list(schema="ldj-style",version=2,appearance=state(),settings=settings),
+    jsonlite::write_json(list(schema="ldj-style",version=2,appearance=state(),settings=settings,
+      panel_styles=if(is.null(panel_styles)) list() else panel_styles()),
       file,pretty=TRUE,auto_unbox=TRUE,digits=NA)
   })
   shiny::observeEvent(input$style_import,{
@@ -378,6 +379,7 @@ ldj_color_server <- function(input,output,session,series) {
           shiny::updateSliderInput(session,id,value=value)
         else shiny::updateNumericInput(session,id,value=value)
       }
+      if(!is.null(z$panel_styles) && !is.null(panel_styles)) panel_styles(z$panel_styles)
       state(z$appearance)
       shiny::updateSelectInput(session,"palette",selected=z$appearance$palette)
       shiny::updateSelectInput(session,"visual_preset",selected=z$appearance$preset)
@@ -507,7 +509,7 @@ ldj_validate_style <- function(document) {
   if(identical(document$schema,"ldj-colors"))
     return(list(appearance=ldj_validate_colors(document),settings=list()))
   if(!identical(document$schema,"ldj-style") || !identical(as.numeric(document$version),2) ||
-     !is.list(document$settings) || !setequal(names(document),c("schema","version","appearance","settings")))
+     !is.list(document$settings) || length(setdiff(names(document),c("schema","version","appearance","settings","panel_styles")))>0)
     stop("Esquema de estilo desconocido.")
   settings <- document$settings
   fields <- ldj_style_fields()
@@ -535,5 +537,42 @@ ldj_validate_style <- function(document) {
   raw <- trimws(settings$axis_x_breaks %||% "")
   if(nzchar(raw) && any(!is.finite(suppressWarnings(as.numeric(strsplit(raw,";",fixed=TRUE)[[1]])))))
     stop("Las divisiones X deben ser numéricas.")
-  list(appearance=ldj_validate_colors(document$appearance),settings=settings)
+  panels <- document$panel_styles
+  if(!is.null(panels)) {
+    if(!is.list(panels) || length(setdiff(names(panels),c("universal","mtt","activity","safety"))))
+      stop("Módulo de panel desconocido.")
+    for(module in names(panels)) {
+      registry <- panels[[module]]
+      if(!is.list(registry) || length(setdiff(names(registry),LETTERS[1:8]))) stop("Panel desconocido.")
+      for(tag in names(registry)) {
+        z <- registry[[tag]]
+        if(!is.list(z) || length(setdiff(names(z),c("title","x_label","y_label","color","annotation",
+          "x_limits","y_limits","summary_measure","point_size","font_size","point_shape","x_scale","show_points"))))
+          stop("Configuración gráfica de panel desconocida.")
+        for(id in intersect(names(z),c("title","x_label","y_label","annotation","color"))) {
+          value <- z[[id]]
+          if(!is.character(value) || length(value)!=1L || is.na(value) || nchar(value)>1000 ||
+             (id=="color" && !grepl("^#[[:xdigit:]]{6}$",value))) stop("Texto o color de panel inválido.")
+        }
+        for(id in intersect(names(z),c("x_limits","y_limits"))) {
+          value <- unlist(z[[id]],use.names=FALSE)
+          if(length(value)!=2L || !is.numeric(value) || any(!is.finite(value)) || diff(value)<=0 ||
+             (id=="x_limits" && value[1]<=0)) stop("Límites de panel inválidos.")
+          z[[id]] <- value
+        }
+        for(id in intersect(names(z),c("point_size","font_size","point_shape"))) {
+          value <- z[[id]]
+          if(length(value)!=1L || !is.numeric(value) || !is.finite(value) || value<=0 || value>40)
+            stop("Tamaño o símbolo de panel inválido.")
+        }
+        if(!is.null(z$x_scale) && !z$x_scale %in% c("linear","log10")) stop("Escala de panel inválida.")
+        if(!is.null(z$summary_measure) && !z$summary_measure %in% c("SD","SEM","IC95")) stop("Dispersión de panel inválida.")
+        if(!is.null(z$show_points) && (!is.logical(z$show_points) || length(z$show_points)!=1L || is.na(z$show_points)))
+          stop("Visibilidad de los puntos inválida.")
+        registry[[tag]] <- z
+      }
+      panels[[module]] <- registry
+    }
+  }
+  list(appearance=ldj_validate_colors(document$appearance),settings=settings,panel_styles=panels)
 }
