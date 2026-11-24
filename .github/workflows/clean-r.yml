@@ -1,14 +1,14 @@
 name: Clean Linux R 4.6.0 deployment
 on:
   push:
-    branches: [demo, 'fix/module-navigation-manual-data', 'fix/posit-module-runtime-qa', 'fix/mtt-empty-control-map', 'feature/mtt-anova-dunnett-editorial', 'feature/ldj-prism-editorial-integration']
+    branches: [demo, 'fix/module-navigation-manual-data', 'fix/posit-module-runtime-qa', 'fix/mtt-empty-control-map', 'feature/mtt-anova-dunnett-editorial', 'feature/ldj-prism-editorial-integration', 'feature/ldj-prism-usability-axis-layout']
     paths: ['manifest.json', 'app.R', 'R/**', 'tests/**', '.github/workflows/clean-r.yml']
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   verify:
-    if: github.ref == 'refs/heads/demo' || github.ref == 'refs/heads/fix/module-navigation-manual-data' || github.ref == 'refs/heads/fix/posit-module-runtime-qa' || github.ref == 'refs/heads/fix/mtt-empty-control-map' || github.ref == 'refs/heads/feature/mtt-anova-dunnett-editorial' || github.ref == 'refs/heads/feature/ldj-prism-editorial-integration'
+    if: github.ref == 'refs/heads/demo' || github.ref == 'refs/heads/fix/module-navigation-manual-data' || github.ref == 'refs/heads/fix/posit-module-runtime-qa' || github.ref == 'refs/heads/fix/mtt-empty-control-map' || github.ref == 'refs/heads/feature/mtt-anova-dunnett-editorial' || github.ref == 'refs/heads/feature/ldj-prism-editorial-integration' || github.ref == 'refs/heads/feature/ldj-prism-usability-axis-layout'
     runs-on: ubuntu-22.04
     env:
       RENV_CONFIG_CACHE_ENABLED: 'FALSE'

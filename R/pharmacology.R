@@ -142,7 +142,7 @@ ldj_cc20_sources <- function(table, fit, tolerance = 10) {
 
 ldj_safety_editorial_plot <- function(result,state,unit,measure="SD",title="",x_label=NULL,y_label=NULL,cc20_source="table",cc20_tolerance=10,show_fit=FALSE,
                                       viability_label="80–100% viable",panel_styles=list(),
-                                      font_size=12,font_family="sans",show_si=FALSE,english=FALSE) {
+                                      font_size=12,font_family="sans",show_si=FALSE,english=FALSE,axes=NULL,layout=NULL,x_scale="log10") {
   stopifnot(cc20_source %in% c("table","regression","both"),is.finite(cc20_tolerance),cc20_tolerance>=0)
   label_unit <- if(unit %in% c("uM","μM")) "µM" else unit
   dose_label <- if(english) "Concentration" else "Concentración"
@@ -191,7 +191,7 @@ ldj_safety_editorial_plot <- function(result,state,unit,measure="SD",title="",x_
         shape=lc$point_shape %||% sf$point_shape %||% 21,
         size=lc$point_size %||% sf$point_size %||% 2,fill=sf$curve,colour=sf$point)+
       ggplot2::geom_hline(yintercept=80,linetype="dashed",colour=sf$reference,alpha=sf$reference_alpha %||% 1)+
-      (if(identical(lc$x_scale,"linear")) ggplot2::scale_x_continuous() else ggplot2::scale_x_log10())+
+      (if(identical(lc$x_scale %||% x_scale,"linear")) ggplot2::scale_x_continuous() else ggplot2::scale_x_log10())+
       ldj_plot_theme(sf,lc$font_size %||% font_size,font_family)+ggplot2::labs(title=lc$title %||% paste(tags[1],key,if(english) "· Viability" else "· Viabilidad"),
         x=lc$x_label %||% x_label %||% paste0(dose_label," (",label_unit,")"),
         y=lc$y_label %||% y_label %||% "Viabilidad (%)",caption=lc$annotation,
@@ -241,14 +241,18 @@ ldj_safety_editorial_plot <- function(result,state,unit,measure="SD",title="",x_
     right <- right+ggplot2::scale_fill_manual(values=parameter_colors,guide="none")+
       ggplot2::scale_colour_manual(values=parameter_colors,guide="none")+
       ggplot2::scale_shape_manual(values=c(IC50=21,`CC20 · Ajuste`=23,`CC20 · Tabla`=24,CC50=22),guide="none")+
-      (if(identical(rc$x_scale,"linear")) ggplot2::scale_x_continuous(expand=ggplot2::expansion(mult=.25)) else
+      (if(identical(rc$x_scale %||% x_scale,"linear")) ggplot2::scale_x_continuous(expand=ggplot2::expansion(mult=.25)) else
         ggplot2::scale_x_log10(expand=ggplot2::expansion(mult=.25)))+
       ggplot2::coord_cartesian(xlim=rc$x_limits)+ldj_plot_theme(sp,rc$font_size %||% font_size,font_family)+
       ggplot2::labs(title=rc$title %||% paste(tags[2],key,if(english) "· Parameters" else "· Parámetros"),
         x=rc$x_label %||% paste0(dose_label," (",label_unit,")"),y=rc$y_label,caption=rc$annotation,
         subtitle=if(length(notes)) paste(notes,collapse="\n") else "Franja: separación descriptiva IC50–CC20")
+    left <- ldj_editorial_axes(left,axes,tags[1],percent=TRUE,
+      xlog=!identical(lc$x_scale %||% x_scale,"linear"),xlim=lc$x_limits,ylim=lc$y_limits)
+    right <- ldj_editorial_axes(right,axes,tags[2],discrete_y=TRUE,
+      xlog=!identical(rc$x_scale %||% x_scale,"linear"),xlim=rc$x_limits)
     plots <- c(plots,list(left,right))
   }
-  patchwork::wrap_plots(plots,ncol=2)+patchwork::plot_annotation(title=title,
+  ldj_editorial_layout(plots,layout)+patchwork::plot_annotation(title=title,
     caption=paste("Medias ±",measure,"· La franja entre parámetros es descriptiva. ND: parámetro no disponible. Triángulo al pie: concentración de tabla. IC95%: comparación descriptiva."))
 }

@@ -364,3 +364,90 @@ ldj_editorial_dimensions <- function(module, rows=4L) {
   stopifnot(!is.null(pixels),length(rows)==1L,rows %in% 1:4)
   stats::setNames(c(pixels[1],pixels[2]*rows/4)/600,c("width","height"))
 }
+
+# Presentation limits are coordinate limits. Scale transformations and breaks do
+# not subset the data used by the analytical reactives.
+ldj_editorial_axes <- function(plot, axes, tag, discrete_x=FALSE, discrete_y=FALSE,
+                               percent=FALSE, xlog=FALSE, xlim=NULL, ylim=NULL) {
+  if(is.null(axes) || !axes$target %in% c("all",tag)) return(plot)
+  xlim <- if(!discrete_x) axes$xlim %||% xlim else NULL
+  ylim <- if(!discrete_y) axes$ylim %||% ylim else NULL
+  ylog <- !discrete_y && isTRUE(axes$ylog)
+  if(xlog && !is.null(xlim) && min(xlim)<=0) stop("El eje X logarítmico requiere límites positivos.")
+  if(ylog && !is.null(ylim) && min(ylim)<=0) stop("El eje Y logarítmico requiere límites positivos.")
+  xlabels <- function(x) if(isTRUE(axes$scientific)) formatC(x,format="e",digits=2) else scales::label_number()(x)
+  if(discrete_x) {
+    original <- plot$scales$get_scales("x")
+    old_labels <- if(!is.null(original) && is.function(original$labels)) original$labels else identity
+    labels <- function(x) {
+      y <- old_labels(x)
+      y <- sub("^Infectado[[:space:]]+sin[[:space:]]+tratamiento$",axes$infected,y,ignore.case=TRUE)
+      y <- sub("^Vehículo$",axes$vehicle,y,ignore.case=TRUE)
+      vapply(y,function(z) paste(strwrap(z,width=axes$wrap),collapse="\n"),character(1))
+    }
+    plot <- suppressMessages(plot+ggplot2::scale_x_discrete(labels=labels,
+      expand=ggplot2::expansion(add=axes$category_padding)))
+  } else {
+    xscale <- if(xlog) ggplot2::scale_x_log10 else ggplot2::scale_x_continuous
+    plot <- suppressMessages(plot+xscale(labels=xlabels,breaks=axes$xbreaks %||% ggplot2::waiver()))
+  }
+  expansion <- ggplot2::expansion(mult=c(axes$lower_space,axes$upper_space))
+  if(!discrete_y) {
+    yscale <- if(ylog) ggplot2::scale_y_log10 else ggplot2::scale_y_continuous
+    ybreaks <- if(is.finite(axes$ystep) && axes$ystep>0) function(limits) {
+      first <- ceiling(limits[1]/axes$ystep)*axes$ystep
+      last <- floor(limits[2]/axes$ystep)*axes$ystep
+      if(last<first || (last-first)/axes$ystep>250) return(scales::breaks_extended()(limits))
+      seq(first,last,by=axes$ystep)
+    } else if(percent && !ylog) function(limits) {
+      top <- max(120,ceiling(limits[2]/20)*20)
+      if(top>5000) return(scales::breaks_extended()(limits))
+      seq(0,top,20)
+    } else ggplot2::waiver()
+    plot <- suppressMessages(plot+yscale(breaks=ybreaks,expand=expansion,
+      labels=scales::label_number(accuracy=10^-axes$decimals)))
+  }
+  notices <- character()
+  # Build only for range validation, with all data still present in the plot.
+  if(!is.null(xlim) || !is.null(ylim) || (percent && !ylog) || ylog) {
+    layers <- ggplot2::ggplot_build(plot)$data
+    bounds <- function(axis) unlist(lapply(layers,function(layer)
+      unlist(layer[intersect(names(layer),c(axis,paste0(axis,c("min","max","end","intercept"))))])))
+    for(axis in c("x","y")) {
+      limits <- if(axis=="x") xlim else ylim
+      values <- bounds(axis)
+      transformed <- if(axis=="x") xlog else ylog
+      if(axis=="y" && percent && !ylog && is.null(ylim)) {
+        ylim <- range(c(0,120,values[is.finite(values)]))
+        next
+      }
+      if(!is.null(limits)) {
+        if(transformed) limits <- log10(limits)
+        if(any(is.finite(values) & (values<limits[1] | values>limits[2])))
+          notices <- c(notices,paste("recorte visual en",toupper(axis)))
+      }
+    }
+    if(ylog && length(bounds("y")) && any(!is.finite(bounds("y"))))
+      notices <- c(notices,"el eje logarítmico no representa valores ≤ 0")
+  }
+  if(length(notices)) plot <- plot+ggplot2::labs(caption=paste(
+    plot$labels$caption %||% "",paste("Aviso:",paste(unique(notices),collapse=", ")),sep="\n"))
+  suppressMessages(plot+ggplot2::coord_cartesian(xlim=xlim,ylim=ylim))+
+    ggplot2::theme(axis.text.x=ggplot2::element_text(size=axes$xsize,angle=axes$angle,hjust=if(axes$angle==0) .5 else 1),
+      axis.text.y=if(axes$show_y) ggplot2::element_text(size=axes$ysize,face=axes$yface) else ggplot2::element_blank(),
+      axis.ticks=ggplot2::element_line(linewidth=axes$tick_width),
+      axis.ticks.length=grid::unit(axes$tick_length,"pt"))
+}
+
+ldj_editorial_layout <- function(plots, layout=NULL) {
+  if(is.null(layout)) return(patchwork::wrap_plots(plots,ncol=2))
+  plots <- lapply(plots,function(plot) plot+ggplot2::theme(plot.margin=ggplot2::margin(
+    layout$inner+layout$vgap/2,layout$inner+layout$hgap/2,
+    layout$inner+layout$vgap/2,layout$inner+layout$hgap/2)))
+  heights <- rep(1,length.out=ceiling(length(plots)/2))
+  if(length(layout$row)==1L && layout$row %in% seq_along(heights))
+    heights[layout$row] <- layout$row_weight
+  patchwork::wrap_plots(plots,ncol=2,widths=c(layout$left,1),heights=heights)+
+    patchwork::plot_annotation(theme=ggplot2::theme(plot.margin=ggplot2::margin(layout$outer,
+      layout$outer,layout$outer,layout$outer)))
+}

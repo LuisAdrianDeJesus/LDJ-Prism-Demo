@@ -108,6 +108,8 @@ ui <- fluidPage(
     .mtt-preview { overflow: auto; background: white; }
     @media print { .sidebar-panel, .title-line, details { display:none; }
       .main-panel { width:100%; } .mtt-preview { overflow:visible; } }
+    .ldj-ratio { position:relative; }
+    .ldj-ratio > .shiny-plot-output { position:absolute; inset:0; }
   "))),
   div(class = "title-line",
       h2("LDJ Prism", style = "margin-bottom: 3px;"),
@@ -155,31 +157,49 @@ tags$details(tags$summary("Asignar controles por serie y experimento"),
   textOutput("mtt_control_status")),
 actionButton("mtt_run","Ejecutar análisis de la tabla"),
 textOutput("mtt_run_status"),
-selectInput("mtt_inference","Análisis estadístico",c("ANOVA de una vía + Dunnett contra control"="anova","Solo análisis descriptivo"="descriptive")),
-selectInput("mtt_reference","Control de referencia",c("No tratado"="untreated","Vehículo"="vehicle","Negativo"="negative","Positivo"="positive","Infectado sin tratamiento"="infected_untreated")),
 h4("ANOVA MTT"),tableOutput("mtt_anova_table"),
 h4("Dunnett MTT"),tableOutput("mtt_dunnett_table"),
 tags$details(tags$summary("Diagnósticos y trazabilidad"),verbatimTextOutput("mtt_inference_report")),
 downloadButton("mtt_statistics","Descargar resultados MTT (JSON)")),
 actionButton("run_analysis","Ejecutar análisis"),
 textOutput("workflow_status"),
+tags$details(tags$summary("Opciones de tabla, presentación y dosis cero"),
 textInput("control_label_default", "Etiqueta del control", "No tratado"),
 selectInput("control_type_default", "Tipo predeterminado de control cero",
  c("No tratado"="untreated","Vehículo"="vehicle","Control negativo"="negative",
  "Control positivo"="positive","Infectado sin tratamiento"="infected_untreated")),
 selectInput("dispersion", "Dispersión", c("SD","SEM","IC95")),
 helpText("Para distinguir controles en la tabla: control_type, control_label, observation_id, experiment_id, control_source e inference_eligible. Sin procedencia completa se muestran solo como referencia visual."),
-selectInput("threshold_mode", "Definición del umbral", c("Respuesta absoluta"="absolute","Porcentaje de la media del control"="control")),
 selectInput("zero_policy", "Dosis cero en el ajuste", c("Excluir del ajuste; conservar control"="exclude","Incluir en ajuste"="include")),
-checkboxInput("multipanel", "Figura multipanel: vista general y detalle por serie", FALSE),
-textInput("experiment_id", "Identificador del experimento", ""),
-textInput("control_experiment", "Experimento del control", ""),
-textInput("control_source", "Procedencia del control", ""),
+checkboxInput("multipanel", "Figura multipanel: vista general y detalle por serie", FALSE)),
 selectInput("model", "Modelo", c("4PL","3PL")),
-textInput("model_reason", "Justificación del modelo/restricciones", ""),
-checkboxInput("independent", "Confirmo réplicas independientes y control del mismo experimento", FALSE),
-numericInput("control", "Concentración del control", 0, min=0),
+selectInput("threshold_mode", "Definición del umbral", c("Respuesta absoluta"="absolute","Porcentaje de la media del control"="control")),
+selectInput("reason_method","Justificación metodológica",
+  c("Modelo 4PL con mesetas libres"="free","Respuesta normalizada"="normalized","Personalizada"="custom")),
+conditionalPanel("input.reason_method === 'custom'",
+  textInput("model_reason","Justificación del modelo/restricciones","")),
 selectInput("unit", "Unidad de concentración", c("uM","nM","mM","M")),
+tags$details(id="advanced_analysis",tags$summary("Configuración avanzada · ANOVA y Dunnett"),
+  helpText("Los ajustes y análisis descriptivos están disponibles sin confirmar independencia."),
+  selectizeInput("experiment_id","Identificador del experimento",choices=NULL,
+    options=list(create=TRUE,placeholder="Ej. ensayo-01")),
+  selectizeInput("control_experiment","Experimento del control",choices=NULL,
+    options=list(create=TRUE,placeholder="Ej. ensayo-01")),
+  selectInput("provenance_choice","Procedencia del control",
+    c("Procedencia desconocida"="","Mismo experimento"="Mismo experimento",
+      "Control físico compartido"="Control físico compartido","Experimento diferente"="Experimento diferente",
+      "Personalizada"="custom")),
+  conditionalPanel("input.provenance_choice === 'custom'",
+    textInput("control_source","Procedencia personalizada","")),
+  selectInput("unit_id_field","Columna de unidad experimental independiente",choices=c("independent_unit_id")),
+  helpText("Use una unidad física por réplica. Crear un identificador administrativo no acredita independencia ni procedencia."),
+  checkboxInput("independent", "Confirmo réplicas independientes y control del mismo experimento", FALSE),
+  numericInput("control", "Concentración del control", 0, min=0),
+  conditionalPanel("input.module === 'mtt'",
+    selectInput("mtt_inference","Análisis estadístico",c("ANOVA de una vía + Dunnett contra control"="anova","Solo análisis descriptivo"="descriptive")),
+    selectInput("mtt_reference","Control de referencia",c("No tratado"="untreated","Vehículo"="vehicle","Negativo"="negative","Positivo"="positive","Infectado sin tratamiento"="infected_untreated"))),
+  conditionalPanel("input.module === 'activity'",
+    selectInput("activity_control_type","Control inferencial de actividad",c("Infectado sin tratamiento"="infected_untreated","Células sanas sin tratamiento"="untreated","Vehículo"="vehicle","Negativo"="negative","Positivo"="positive")))),
 conditionalPanel("input.module === 'safety'",
 selectInput("safety_display","Vista de potencia y seguridad",c("Editorial 4×2"="editorial","Resumen transversal"="summary")),
 conditionalPanel("input.module === 'safety' && input.safety_display === 'editorial'",
@@ -200,7 +220,6 @@ numericInput("cc50_value", "CC50 para integración", NA_real_, min=0),
 selectInput("ic_unit", "Unidad IC50", c("uM","nM","mM","M")),
 selectInput("cc_unit", "Unidad CC20/CC50", c("uM","nM","mM","M"))),
 conditionalPanel("input.module === 'activity'",
-selectInput("activity_control_type","Control inferencial de actividad",c("Infectado sin tratamiento"="infected_untreated","Células sanas sin tratamiento"="untreated","Vehículo"="vehicle","Negativo"="negative","Positivo"="positive")),
 checkboxInput("activity_editorial","Actividad: pares editoriales por serie (hasta 4)",TRUE),
 checkboxInput("activity_other_controls","Mostrar otros controles experimentales",TRUE)),
 ),
@@ -219,6 +238,9 @@ p("Las opciones gráficas no recalculan modelos ni comparaciones. La demo usa re
 selectInput("mtt_target","Aplicar estilo a",c("Todos los paneles"="all",LETTERS[1:8])),
 checkboxInput("mtt_significance","Mostrar significancia",TRUE),
 checkboxInput("mtt_anova_summary","Mostrar resumen ANOVA",TRUE),
+selectInput("anova_position","Ubicación del resumen ANOVA",
+  c("Sobre el área de trazado"="subtitle","Debajo del panel"="caption")),
+selectInput("anova_format","Formato de ANOVA",c("Compacto"="compact","Decimal"="decimal","Científico"="scientific")),
 checkboxInput("mtt_show_ns","Mostrar ns",TRUE),
 numericInput("mtt_mark_size","Tamaño de significancia",3,min=1,max=8,step=.5),
 numericInput("mtt_mark_offset","Separación de significancia",.07,min=.02,max=.25,step=.01),
@@ -236,7 +258,7 @@ selectInput("mtt_shape","Símbolo del panel",c("Global"="global","Círculo"="21"
 selectInput("mtt_scale","Escala X de curva",c("Global"="global","Log10"="log10","Lineal"="linear")),
 selectInput("mtt_points","Réplicas del panel de barras",c("Global"="global","Mostrar"="show","Ocultar"="hide")),
 actionButton("mtt_apply","Aplicar estilo"),actionButton("mtt_reset","Restablecer estilos por panel"),
-sliderInput("preview_zoom","Zoom de vista previa",min=60,max=150,value=100,step=10),
+
 actionButton("print_figure","Modo impresión",onclick="window.print()"),
 verbatimTextOutput("mtt_audit")
 ),
@@ -248,7 +270,48 @@ textInput("plot_title", "Título", ""),
                   choices = c("Lineal" = "linear", "Log10" = "log10"), selected = "log10"),
       selectInput("y_scale", "Escala Y",
                   choices = c("Lineal" = "linear", "Log10" = "log10"))
+,
+  selectInput("axis_target","Aplicar ejes a",c("Todos"="all",LETTERS[1:8])),
+  tags$details(open=NA,tags$summary("Eje Y"),
+    selectInput("axis_y_mode","Límites Y",c("Automáticos"="auto","Manuales"="manual")),
+    numericInput("axis_y_min","Mínimo Y",0),numericInput("axis_y_max","Máximo Y",120),
+    numericInput("axis_y_step","Intervalo Y (0 = automático)",0,min=0),
+    numericInput("axis_y_decimals","Decimales Y",0,min=0,max=8),
+    numericInput("axis_y_top","Expansión superior",.08,min=0,max=1,step=.01),
+    numericInput("axis_y_bottom","Expansión inferior",.01,min=0,max=1,step=.01),
+    checkboxInput("axis_y_show","Mostrar etiquetas Y",TRUE),
+    selectInput("axis_y_face","Grosor de etiquetas Y",c("Normal"="plain","Negrita"="bold")),
+    numericInput("axis_y_size","Tamaño de etiquetas Y",9,min=4,max=30)),
+  tags$details(tags$summary("Eje X"),
+    selectInput("axis_x_mode","Límites X",c("Automáticos"="auto","Manuales"="manual")),
+    numericInput("axis_x_min","Mínimo X",.001),numericInput("axis_x_max","Máximo X",100),
+    textInput("axis_x_breaks","Divisiones X separadas por punto y coma",""),
+    checkboxInput("axis_x_scientific","Notación científica X",FALSE),
+    sliderInput("axis_x_angle","Rotación X",0,90,45),
+    numericInput("axis_x_wrap","Caracteres por línea",12,min=5,max=60),
+    textInput("axis_infected","Etiqueta gráfica del control infectado","Inf. untreated"),
+    textInput("axis_vehicle","Etiqueta gráfica del vehículo","Vehículo"),
+    numericInput("axis_x_size","Tamaño de etiquetas X",8,min=4,max=30),
+    numericInput("axis_category_padding","Separación de bordes categóricos",.65,min=.2,max=2,step=.05)),
+  numericInput("axis_tick_length","Longitud de marcas (pt)",3,min=0,max=12),
+  numericInput("axis_tick_width","Grosor de marcas (mm)",.35,min=.1,max=2,step=.05),
+  actionButton("axes_restore","Restaurar ejes"),
+  helpText("El eje Y categórico de Potencia conserva los nombres de los parámetros. Las anotaciones de significancia se separan en el editor de paneles.")
 ),
+tabPanel("Dimensiones y distribución",
+  numericInput("width","Ancho de exportación (pulgadas)",7,min=2,max=20),
+  numericInput("height","Alto de exportación (pulgadas)",5,min=2,max=20),
+  selectInput("layout_row","Fila para ajustar",c("Todas"=0,1:4)),
+  sliderInput("row_weight","Altura relativa de la fila y sus paneles",.6,2,1,step=.1),
+  sliderInput("layout_left","Anchura de columna izquierda respecto a la derecha",.5,2,1,step=.1),
+  numericInput("layout_hgap","Separación horizontal (pt)",8,min=0,max=40),
+  numericInput("layout_vgap","Separación vertical (pt)",10,min=0,max=40),
+  numericInput("layout_inner","Margen interno (pt)",9,min=0,max=40),
+  numericInput("layout_outer","Margen externo (pt)",12,min=0,max=40),
+  textOutput("layout_ratio"),
+  selectInput("preview_mode","Modo de vista previa",c("Ajustar al ancho"="fit","Tamaño real"="actual")),
+  sliderInput("preview_zoom","Zoom de vista previa",min=60,max=150,value=100,step=10),
+  actionButton("layout_restore","Restaurar proporciones originales")),
 tabPanel("Colores",ldj_color_ui()),
 tabPanel("Símbolos y líneas",
 checkboxInput("points", "Mostrar observaciones individuales", TRUE),
@@ -276,8 +339,8 @@ numericInput("font_size", "Tamaño base (pt)", 12, min = 7, max = 24),
 textInput("caption", "Nota al pie", "Datos sintéticos · sin inferencia estadística")
 ),
 tabPanel("Exportar",
-numericInput("width", "Ancho de exportación (pulgadas)", 7, min = 2, max = 20),
-      numericInput("height", "Alto de exportación (pulgadas)", 5, min = 2, max = 20),
+
+      
       selectInput("dpi", "Resolución de imagen (dpi)",
                   choices = c("300" = "300", "600" = "600", "900" = "900"),
                   selected = "600"),
@@ -356,10 +419,10 @@ server <- function(input, output, session) {
   mtt_control_map <- reactiveVal(NULL)
   analysis_signature <- reactive(serialize(list(data=dataset(),control_map=mtt_control_map(),x=input$x,y=input$y,
     group=input$group,series=lapply(1:4,function(i) input[[paste0("mtt_series_",i)]]),
-    unit=input$unit,model=input$model,reason=input$model_reason,
+    unit=input$unit,model=input$model,reason=list(input$reason_method,input$model_reason),
     mtt_inference=input$mtt_inference,mtt_reference=input$mtt_reference,
     threshold=input$threshold_mode,zero=input$zero_policy,
-    control=input$control,control_type=input$control_type_default,
+    unit_id_field=input$unit_id_field,provenance=input$provenance_choice,control=input$control,control_type=input$control_type_default,
     experiment=input$experiment_id,control_experiment=input$control_experiment,
     source=input$control_source,independent=input$independent),NULL))
   observeEvent(list(dataset(),input$group), {
@@ -511,8 +574,9 @@ server <- function(input, output, session) {
       font_size=input$font_size,font_family=input$font_family,show_points=input$points,
       point_shape=as.integer(input$point_shape),point_size=input$point_size,
       summary_measure=input$dispersion,x_scale=input$x_scale,panels=mtt_styles(),
+      axes=axis_settings(),layout=editorial_layout(),percent=grepl("%",input$y_label %||% "",fixed=TRUE),
       plot_width=input$width,plot_height=input$height,dpi=as.integer(input$dpi),appearance=appearance(),
-      show_significance=input$mtt_significance,show_anova=input$mtt_anova_summary,show_ns=input$mtt_show_ns,
+      show_significance=input$mtt_significance,show_anova=input$mtt_anova_summary,anova_position=input$anova_position,anova_format=input$anova_format,show_ns=input$mtt_show_ns,
       significance_offset=input$mtt_mark_offset,significance_size=input$mtt_mark_size)
     if(original_example("mtt")) {
       result <- ldj_mtt_display_unit(mtt_editable_example(),input$mtt_display_unit)
@@ -582,18 +646,75 @@ server <- function(input, output, session) {
     if(isTRUE(input$mtt_user_data)) {req(table_result()); return(head(do.call(rbind,lapply(table_result()$rows,`[[`,"data")),60))}
     if(original_example("mtt")) return(head(dataset(),60))
     head(mtt_bundle()$orig,60)})
-  output$plot_container <- renderUI({
+  figure_size <- reactive({
+    width <- input$width %||% 7
+    height <- input$height %||% 5
+    req(width>0,height>0)
+    c(width=width,height=height)
+  })
+  output$layout_ratio <- renderText({
+    size <- figure_size()
+    rows <- max(editorial_rows(),1)
+    paste(sprintf("Relación ancho/alto %.3f.",size[1]/size[2]),
+      sprintf("Altura nominal por fila %.2f pulgadas.",size[2]/rows))
+  })
+  editorial_layout <- reactive(list(left=input$layout_left %||% 1,row=as.integer(input$layout_row %||% 0),
+    row_weight=input$row_weight %||% 1,hgap=input$layout_hgap %||% 8,vgap=input$layout_vgap %||% 10,
+    inner=input$layout_inner %||% 9,outer=input$layout_outer %||% 12))
+  observeEvent(input$layout_restore,{
     key <- editorial_module()
-    if(is.null(key)) return(plotOutput("plot",height="520px"))
+    size <- if(is.null(key)) c(width=7,height=5) else ldj_editorial_dimensions(key)
+    updateNumericInput(session,"width",value=size[1]);updateNumericInput(session,"height",value=size[2])
+    updateSelectInput(session,"layout_row",selected="0");updateSliderInput(session,"row_weight",value=1)
+    updateSliderInput(session,"layout_left",value=1);updateSliderInput(session,"preview_zoom",value=100)
+    updateSelectInput(session,"preview_mode",selected="fit")
+    for(id in names(c(layout_hgap=8,layout_vgap=10,layout_inner=9,layout_outer=12))) {
+      defaults <- c(layout_hgap=8,layout_vgap=10,layout_inner=9,layout_outer=12)
+      updateNumericInput(session,id,value=defaults[[id]])
+    }
+  })
+  axis_settings <- reactive({
+    limits <- function(mode,lo,hi) {
+      if(!identical(mode,"manual")) return(NULL)
+      validate(need(all(is.finite(c(lo,hi))) && lo<hi,"Indique límites de eje finitos y crecientes."))
+      c(lo,hi)
+    }
+    raw <- trimws(input$axis_x_breaks %||% "")
+    breaks <- if(nzchar(raw)) suppressWarnings(as.numeric(strsplit(raw,";",fixed=TRUE)[[1]])) else NULL
+    validate(need(is.null(breaks) || all(is.finite(breaks)),"Use divisiones X numéricas separadas por punto y coma."))
+    list(target=input$axis_target %||% "all",
+      xlim=limits(input$axis_x_mode,input$axis_x_min,input$axis_x_max),
+      ylim=limits(input$axis_y_mode,input$axis_y_min,input$axis_y_max),xbreaks=breaks,
+      ylog=identical(input$y_scale,"log10"),ystep=input$axis_y_step %||% 0,
+      decimals=input$axis_y_decimals %||% 0,lower_space=input$axis_y_bottom %||% .01,
+      upper_space=input$axis_y_top %||% .08,show_y=!identical(input$axis_y_show,FALSE),
+      yface=input$axis_y_face %||% "plain",ysize=input$axis_y_size %||% 9,
+      xsize=input$axis_x_size %||% 8,angle=input$axis_x_angle %||% 45,wrap=input$axis_x_wrap %||% 12,
+      infected=input$axis_infected %||% "Inf. untreated",vehicle=input$axis_vehicle %||% "Vehículo",
+      category_padding=input$axis_category_padding %||% .65,scientific=isTRUE(input$axis_x_scientific),
+      tick_length=input$axis_tick_length %||% 3,tick_width=input$axis_tick_width %||% .35)
+  })
+  observeEvent(input$axes_restore,{
+    for(id in c("axis_x_mode","axis_y_mode")) updateSelectInput(session,id,selected="auto")
+    updateSelectInput(session,"x_scale",selected="log10");updateSelectInput(session,"y_scale",selected="linear")
+    updateSelectInput(session,"axis_target",selected="all");updateSelectInput(session,"axis_y_face",selected="plain")
+    defaults <- c(axis_x_min=.001,axis_x_max=100,axis_y_min=0,axis_y_max=120,axis_y_step=0,
+      axis_y_decimals=0,axis_y_top=.08,axis_y_bottom=.01,axis_y_size=9,axis_x_wrap=12,
+      axis_x_size=8,axis_category_padding=.65,axis_tick_length=3,axis_tick_width=.35)
+    for(id in names(defaults)) updateNumericInput(session,id,value=defaults[[id]])
+    updateSliderInput(session,"axis_x_angle",value=45)
+    updateTextInput(session,"axis_infected",value="Inf. untreated");updateTextInput(session,"axis_vehicle",value="Vehículo")
+    updateTextInput(session,"axis_x_breaks",value="")
+    updateCheckboxInput(session,"axis_y_show",value=TRUE);updateCheckboxInput(session,"axis_x_scientific",value=FALSE)
+  })
+  output$plot_container <- renderUI({
+    if(is.null(editorial_module())) return(plotOutput("plot",height="520px"))
+    size <- figure_size()
     zoom <- (input$preview_zoom %||% 100)/100
-    rows <- editorial_rows()
-    dimensions <- ldj_editorial_dimensions(key, rows)
-    preview_width <- round(820*zoom)
-    preview_max <- paste0(round(100*zoom),"%")
-    tags$div(style="overflow-x:auto;",
-      tags$div(style=sprintf("width:%dpx;max-width:%s;aspect-ratio:%.6f;position:relative;",
-        preview_width,preview_max,dimensions[["width"]]/dimensions[["height"]]),
-        plotOutput("plot",height="100%",width="100%")))
+    actual <- identical(input$preview_mode,"actual")
+    width <- if(actual) paste0(round(size[1]*96*zoom),"px") else paste0(round(100*zoom),"%")
+    tags$div(class="ldj-ratio",style=sprintf("width:%s;min-width:%dpx;aspect-ratio:%.8f;",
+      width,round(500*zoom),size[1]/size[2]),plotOutput("plot",height="100%",width="100%"))
   })
 
   example_module <- reactiveVal(NULL)
@@ -634,8 +755,29 @@ server <- function(input, output, session) {
       updateTextInput(session, "model_reason", value="")
     }
   },ignoreInit=TRUE)
+  observeEvent(input$model,{
+    choices <- c(if(identical(input$model,"3PL")) c("Modelo 3PL con asíntota inferior fijada en cero"="fixed") else
+      c("Modelo 4PL con mesetas libres"="free"),"Respuesta normalizada"="normalized","Personalizada"="custom")
+    updateSelectInput(session,"reason_method",choices=choices)
+  })
+  observeEvent(dataset(),{
+    d <- dataset()
+    values <- function(x) { x <- trimws(as.character(x)); unique(x[!is.na(x)&nzchar(x)]) }
+    experiments <- values(d$experiment_id)
+    controls <- if("control_type" %in% names(d)) which(!is.na(d$control_type)&d$control_type!="treatment") else integer()
+    control_experiments <- values(d$experiment_id[controls])
+    for(id in c("experiment_id","control_experiment")) {
+      options <- if(id=="experiment_id") experiments else control_experiments
+      previous <- isolate(input[[id]]) %||% ""
+      updateSelectizeInput(session,id,choices=unique(c("",options,previous)),
+        selected=if(previous %in% options) previous else if(length(options)==1L) options else "")
+    }
+    updateSelectInput(session,"unit_id_field",choices=unique(c("independent_unit_id",names(d))),selected="independent_unit_id")
+  })
   observations <- reactive({
     d <- dataset()
+    col <- input$unit_id_field %||% "independent_unit_id"
+    if(col!="independent_unit_id" && col %in% names(d)) d$independent_unit_id <- d[[col]]
     if ("parameter" %in% names(d))
       d <- d[is.na(d$parameter) | !nzchar(trimws(d$parameter)), , drop=FALSE]
     d
@@ -924,6 +1066,13 @@ server <- function(input, output, session) {
     d <- d[!d$.is_control | is.finite(d[[input$x]]),,drop=FALSE]
     map_data(d,input$x,input$y,input$group,input$decimal)
   })
+  declared_provenance <- reactive({
+    choice <- input$provenance_choice %||% ""
+    if(identical(choice,"custom")) return(input$control_source %||% "")
+    if(!nzchar(choice)) return(input$control_source %||% "")
+    if(identical(choice,"Experimento diferente")) return("")
+    choice
+  })
   inference_data <- reactive({
     req(selection_ready())
     d <- visual_data()
@@ -944,12 +1093,12 @@ server <- function(input, output, session) {
       return(list(table=ldj_safety_results(d,input$group %||% ".none",input$decimal)))
     }
     req(selection_ready())
-    reason <- trimws(input$model_reason %||% "")
+    reason <- if(identical(input$reason_method,"custom")) trimws(input$model_reason %||% "") else
+      as.character(input$reason_method %||% "free")
     teaching_example <- original_example("activity")
     if(!nzchar(reason) || (identical(reason,demo_reason) && !identical(dataset(),demo_data) && !teaching_example))
       shiny::validate(shiny::need(FALSE,
         "Antes de ajustar la curva, abra Análisis, justifique el modelo 3PL/4PL y pulse Ejecutar análisis."))
-    if(identical(input$threshold_mode,"control")) inference_data()
     d <- mapped()
     groups <- split(d,d$series)
     fits <- lapply(names(groups),function(g) {
@@ -983,7 +1132,7 @@ server <- function(input, output, session) {
   })
   output$anova <- renderTable({
     req(identical(input$module,"mtt"),isTRUE(input$independent))
-    validate_provenance(input$experiment_id,input$control_experiment,input$control_source,input$independent)
+    validate_provenance(input$experiment_id,input$control_experiment,declared_provenance(),input$independent)
     do.call(rbind,lapply(split(inference_data(),inference_data()$series),function(g) {
       z <- compare_control(g,input$control)$anova
       z$term <- rownames(z); z$series <- g$series[1]; z
@@ -991,14 +1140,14 @@ server <- function(input, output, session) {
   })
   output$diagnostics <- renderTable({
     req(identical(input$module,"mtt"),isTRUE(input$independent))
-    validate_provenance(input$experiment_id,input$control_experiment,input$control_source,input$independent)
+    validate_provenance(input$experiment_id,input$control_experiment,declared_provenance(),input$independent)
     do.call(rbind,lapply(split(inference_data(),inference_data()$series),function(g) {
       z <- compare_control(g,input$control)$diagnostics; z$series <- g$series[1]; z
     }))
   })
   output$comparisons <- renderTable({
     req(identical(input$module,"mtt"),isTRUE(input$independent))
-    validate_provenance(input$experiment_id,input$control_experiment,input$control_source,input$independent)
+    validate_provenance(input$experiment_id,input$control_experiment,declared_provenance(),input$independent)
     d <- inference_data()
     do.call(rbind,lapply(split(d,d$series),function(g) {
       z <- compare_control(g,input$control)$dunnett
@@ -1070,7 +1219,7 @@ server <- function(input, output, session) {
       jsonlite::write_json(list(schema_version = 1, data = "synthetic",
         settings = values[intersect(ids, names(values))], colors = colors,appearance=appearance(),
         mtt=list(template=figure_template(),source=input$mtt_source,panels=mtt_styles()),
-        analysis=list(threshold_mode=input$threshold_mode,zero_policy=input$zero_policy,model=input$model,model_reason=input$model_reason,experiment=input$experiment_id,control_experiment=input$control_experiment,control_source=input$control_source)),
+        analysis=list(threshold_mode=input$threshold_mode,zero_policy=input$zero_policy,model=input$model,model_reason=list(input$reason_method,input$model_reason),experiment=input$experiment_id,control_experiment=input$control_experiment,control_source=input$control_source)),
         file, pretty = TRUE, auto_unbox = TRUE)
     }
   )
@@ -1235,7 +1384,8 @@ server <- function(input, output, session) {
         show_fit=isTRUE(input$safety_show_fit),
         viability_label=if(figure_labels()$english && identical(input$safety_viability_label,"80–100% viable"))
           "80–100% viable cells" else input$safety_viability_label,english=figure_labels()$english,
-        panel_styles=mtt_styles(),font_size=input$font_size,font_family=input$font_family,show_si=isTRUE(input$safety_show_si)))
+        panel_styles=mtt_styles(),font_size=input$font_size,font_family=input$font_family,show_si=isTRUE(input$safety_show_si),
+        axes=axis_settings(),layout=editorial_layout(),x_scale=input$x_scale))
     if(identical(input$module,"safety")) return(ldj_safety_plot(analysis()$table,appearance(),
       input$safety_unit %||% "uM",input$plot_title,input$font_size,input$font_family,isTRUE(input$grid_lines)))
     req(selection_ready())
@@ -1245,13 +1395,14 @@ server <- function(input, output, session) {
         font_family=input$font_family,summary_measure=input$dispersion,show_points=input$points,
         point_size=input$point_size,point_shape=as.integer(input$point_shape),x_scale=input$x_scale,
         reference_control=input$activity_control_type,show_other_controls=isTRUE(input$activity_other_controls),
-        show_significance=isTRUE(input$mtt_significance),show_anova=isTRUE(input$mtt_anova_summary),
+        show_significance=isTRUE(input$mtt_significance),show_anova=isTRUE(input$mtt_anova_summary),anova_position=input$anova_position,anova_format=input$anova_format,
         show_ns=isTRUE(input$mtt_show_ns),significance_size=input$mtt_mark_size,
         significance_offset=input$mtt_mark_offset,
         x_label=if(identical(input$x_label,"Concentración (µM)"))
           paste0(if(figure_labels()$english) "Concentration (" else "Concentración (",
             if(input$unit=="uM") "µM" else input$unit,")") else figure_labels()$x,
         y_label=figure_labels()$y,figure_title=input$plot_title,panels=mtt_styles(),grid=isTRUE(input$grid_lines),
+        axes=axis_settings(),layout=editorial_layout(),percent=grepl("%",input$y_label %||% "",fixed=TRUE),
         y_limits=NULL))$figure)
     }
     p <- plot_builder()

@@ -204,8 +204,20 @@ ldj_mtt_table_figure <- function(result,config=list()) {
       if(!is.null(result$metric)) p <- p+ggplot2::scale_x_discrete(labels=function(labels)
         vapply(labels,function(label) paste(strwrap(label,width=20),collapse="\n"),character(1)))
       if(!is.null(row$inference)) {
-        if(!identical(config$show_anova,FALSE) || is.null(row$inference$labels))
-          p <- p+ggplot2::labs(subtitle=paste(strwrap(row$inference$status,width=56),collapse="\n"))
+        if(!identical(config$show_anova,FALSE) || is.null(row$inference$labels)) {
+          summary <- row$inference$status
+          format <- config$anova_format %||% "compact"
+          a <- row$inference$anova
+          if(!is.null(a) && format!="compact") {
+            f <- if(format=="scientific") function(x) formatC(x,format="e",digits=3) else
+              function(x) format(x,scientific=FALSE,digits=4,trim=TRUE)
+            summary <- sprintf("ANOVA F(%s, %s) = %s · p = %s",
+              a[1,"Df"],a[2,"Df"],f(a[1,"F value"]),f(a[1,"Pr(>F)"]))
+          }
+          summary <- paste(strwrap(summary,width=56),collapse="\n")
+          if(identical(config$anova_position,"caption")) pc$annotation <- paste(
+            c(pc$annotation,summary),collapse="\n") else p <- p+ggplot2::labs(subtitle=summary)
+        }
         if(!is.null(row$inference$labels) && !identical(config$show_significance,FALSE)) {
           marks <- row$inference$labels
           if(identical(config$show_ns,FALSE)) marks <- marks[marks$label!="ns",,drop=FALSE]
@@ -266,10 +278,13 @@ ldj_mtt_table_figure <- function(result,config=list()) {
       ggplot2::theme(axis.text.x=ggplot2::element_text(angle=35,hjust=1),plot.margin=ggplot2::margin(12,16,28,20))
     p <- p+ggplot2::coord_cartesian(ylim=if(j==1 && !is.null(row$inference$labels) && !identical(config$show_significance,FALSE) && nrow(marks) && !is.null(pc$y_limits))
       c(pc$y_limits[1],max(pc$y_limits[2],marks$height+.07*span)) else if(is.null(result$metric)) pc$y_limits else config$panels[[tag]]$y_limits,xlim=if(j==2) pc$x_limits else NULL)
+    p <- ldj_editorial_axes(p,config$axes,tag,discrete_x=j==1,
+      percent=isTRUE(config$percent),xlog=j==2 && !identical(pc$x_scale,"linear"),
+      xlim=if(j==2) pc$x_limits else NULL,ylim=if(j==1) NULL else pc$y_limits)
     plots[[tag]] <- p
   }
   cfg$appearance <- appearance
-  list(figure=patchwork::wrap_plots(plots,ncol=2,nrow=length(result$rows))+patchwork::plot_annotation(title=config$figure_title,
+  list(figure=ldj_editorial_layout(plots,config$layout)+patchwork::plot_annotation(title=config$figure_title,
     caption=paste(strwrap(if(!is.null(result$metric)) paste("Medias ±",cfg$summary_measure,"· Las sombras indican dispersión observada de la media, no incertidumbre del ajuste.") else paste0("Medias ± ",cfg$summary_measure," · Sombras de dispersión observada. Ajustes absolutos; controles descriptivos. ",
       if(any(vapply(result$rows,function(row) !is.null(row$inference$labels),logical(1))))
         "Contrastes Dunnett solo en series elegibles; ajuste por serie. Unidad: " else "Sin comparaciones relativas al control. Unidad: ",result$unit),width=88),collapse="\n"),
@@ -429,10 +444,12 @@ ldj_mtt_editor_build <- function(bundle,config=list()) {
       }
       if(j==1 && !is.null(config$demo_inference) && !is.null(config$appearance))
         p <- ldj_mtt_demo_annotations(p,config$demo_inference[[drug]],utils::modifyList(config,pc),s)
-      plots[[tag]] <- p
+      plots[[tag]] <- ldj_editorial_axes(p,config$axes,tag,discrete_x=j==1,
+        percent=isTRUE(config$percent),xlog=j==2 && !identical(pc$x_scale,"linear"),
+        xlim=if(j==2) pc$x_limits else NULL)
     }
   }
-  figure <- patchwork::wrap_plots(plots,ncol=2,nrow=4,byrow=TRUE) +
+  figure <- ldj_editorial_layout(plots,config$layout) +
     patchwork::plot_annotation(title=cfg$figure_title,
       caption=paste(strwrap(cfg$plot_caption,width=130),collapse="\n"))
   if(!is.null(config$appearance)) figure <- figure+patchwork::plot_annotation(
