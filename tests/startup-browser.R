@@ -224,6 +224,9 @@ tryCatch({
     }
   }
   capture("mtt-physical-controls-browser.png")
+  app$set_inputs(inspector="Análisis",registry_assay="Synthetic viability QA",
+    registry_conditions="Synthetic cell line; 24 h; percent response")
+  app$click("registry_save")
   app$set_inputs(module="activity",inspector="Análisis",activity_control_type="untreated",
     experiment_id="QA",independent=TRUE,model_reason="Synthetic 4PL regression fixture")
   app$click("run_analysis")
@@ -236,6 +239,21 @@ tryCatch({
   stopifnot(any(grepl("ANOVA F",svg,fixed=TRUE)),any(grepl("IC50",svg,fixed=TRUE)),
     any(grepl("IC95",svg,fixed=TRUE)))
   cat("Traceable MTT controls and activity inference with eligible controls: PASS\n")
+  app$set_inputs(inspector="Análisis",registry_assay="Synthetic activity QA",
+    registry_conditions="Synthetic cell line; 24 h; percent response")
+  app$click("registry_save")
+  app$set_inputs(module="safety",inspector="Análisis")
+  app$wait_for_idle()
+  app$set_inputs(registry_mtt="mtt-1",registry_activity="activity-2",registry_confirm=TRUE)
+  registry_file <- file.path("test-artifacts","analytical-registry.json")
+  app$get_download("registry_export",filename=registry_file)
+  registry <- jsonlite::read_json(registry_file)
+  stopifnot(identical(names(registry),c("mtt-1","activity-2")))
+  app$click("registry_integrate")
+  app$wait_for_idle(timeout=90000)
+  stopifnot(app$get_value(input="unit")=="M",app$get_value(input="safety_display")=="editorial")
+  app$wait_for_js("Boolean(document.querySelector('#plot img')?.naturalWidth)",timeout=90000)
+  capture("editorial-integrated.png")
   for(example in c("activity","safety")) {
     app$set_inputs(module=example,inspector="Datos")
     app$click("load_example")

@@ -296,6 +296,18 @@ downloadButton("config", "Configuración JSON")
       conditionalPanel("input.inspector === 'Análisis'",
         h3("2. Análisis"),
         h4("Resultados"), verbatimTextOutput("analysis_status"),
+        conditionalPanel("input.module === 'mtt' || input.module === 'activity'",
+          tags$details(tags$summary("Conservar en el registro de esta sesión"),
+            textInput("registry_assay","Identificador del ensayo"),
+            textInput("registry_conditions","Línea celular, tiempo, normalización y condiciones"),
+            actionButton("registry_save","Guardar resultados actuales"))),
+        conditionalPanel("input.module === 'safety'",
+          tags$details(tags$summary("Integrar resultados de MTT y Actividad farmacológica"),
+            selectInput("registry_mtt","Ensayo MTT",choices=NULL),
+            selectInput("registry_activity","Ensayo de actividad",choices=NULL),
+            checkboxInput("registry_confirm","Confirmo la identidad de los compuestos y he revisado la compatibilidad de las condiciones",FALSE),
+            actionButton("registry_integrate","Integrar resultados"))),
+        downloadButton("registry_export","Exportar registro de sesión (JSON)"),
         tableOutput("results"), conditionalPanel("input.module == 'activity'",verbatimTextOutput("activity_audit")), tableOutput("anova"), tableOutput("diagnostics"), tableOutput("comparisons")),
       p("Piloto con datos sintéticos. Las opciones visuales no modifican la tabla original.",
         class = "help-note")
@@ -1136,6 +1148,95 @@ server <- function(input, output, session) {
     if(controls_separate) return(patchwork::wrap_plots(p,control_plot(),ncol=1))
     p
   })
+  analytical_registry <- reactiveVal(list())
+  observeEvent(input$registry_save,{
+    tryCatch({
+      analysis_ready()
+      module <- input$module
+      assay <- trimws(input$registry_assay %||% "")
+      conditions <- trimws(input$registry_conditions %||% "")
+      if(!nzchar(assay) || !nzchar(conditions)) stop("Identifique el ensayo y documente las condiciones.")
+      if(identical(figure_template(),"mtt4x2")) {
+        if(!isTRUE(input$mtt_user_data) || is.null(table_result()) ||
+           !identical(table_snapshot(),analysis_signature())) stop("Ejecute primero el análisis de la tabla MTT actual.")
+        z <- table_result()
+        estimates <- do.call(rbind,lapply(z$rows,function(row)
+          transform(row$fit$table,series=row$series,unit=z$unit,parameter="CC50")))
+        observations <- do.call(rbind,lapply(z$rows,function(row) {
+          d <- row$data[!row$data$.is_control,,drop=FALSE]
+          data.frame(group=row$series,concentration=ldj_convert_concentration(d[[z$x]],z$unit,"M"),
+            response=d[[z$y]])
+        }))
+      } else {
+        estimates <- analysis()$table
+        if(identical(module,"mtt") && !identical(input$threshold_mode,"absolute"))
+          stop("La integración editorial requiere parámetros de viabilidad absolutos.")
+        estimates$parameter <- if(module=="activity") "IC50" else
+          ifelse(estimates$requested_target==80,"CC20","CC50")
+        observations <- if(module=="mtt") {
+          d <- mapped()
+          data.frame(group=d$series,concentration=ldj_convert_concentration(d$dose,input$unit,"M"),
+            response=d$response)
+        } else NULL
+      }
+      if(is.null(estimates) || !nrow(estimates) || !any(is.finite(estimates$estimate)))
+        stop("No hay una estimación válida para conservar.")
+      registry <- analytical_registry()
+      id <- paste0(module,"-",length(registry)+1L)
+      registry[[id]] <- list(module=module,assay=assay,conditions=conditions,model=input$model,
+        original_unit=input$unit,source="Calculado en LDJ Prism",estimates=estimates,observations=observations)
+      analytical_registry(registry)
+      showNotification(paste("Guardado:",assay),type="message")
+    },error=function(e) showNotification(conditionMessage(e),type="error"))
+  })
+  observeEvent(analytical_registry(),{
+    registry <- analytical_registry()
+    for(module in c("mtt","activity")) {
+      items <- Filter(function(entry) identical(entry$module,module),registry)
+      labels <- vapply(items,function(entry) paste(entry$assay,"·",entry$conditions),character(1))
+      updateSelectInput(session,paste0("registry_",module),choices=c("Seleccionar"="",stats::setNames(names(items),labels)))
+    }
+  })
+  observeEvent(input$registry_integrate,{
+    tryCatch({
+      registry <- analytical_registry()
+      mtt <- registry[[input$registry_mtt %||% ""]]
+      activity <- registry[[input$registry_activity %||% ""]]
+      if(is.null(mtt) || is.null(activity) || !isTRUE(input$registry_confirm))
+        stop("Seleccione los dos ensayos y confirme identidad y compatibilidad.")
+      viable <- sort(unique(as.character(mtt$estimates$series[is.finite(mtt$estimates$estimate) & mtt$estimates$parameter=="CC50"])))
+      active <- sort(unique(as.character(activity$estimates$series[is.finite(activity$estimates$estimate)])))
+      if(!length(viable) || !identical(viable,active)) stop("Los identificadores de compuesto con estimaciones válidas deben coincidir en ambos ensayos.")
+      result_rows <- function(entry) {
+        z <- entry$estimates[entry$estimates$series %in% viable,,drop=FALSE]
+        data.frame(group=z$series,concentration=NA_real_,response=NA_real_,
+          parameter=z$parameter,estimate=z$estimate,lower=z$lower,upper=z$upper,unit=z$unit,
+          provenance=paste(entry$source,entry$assay))
+      }
+      data <- mtt$observations[mtt$observations$group %in% viable,,drop=FALSE]
+      data$parameter <- data$unit <- NA_character_
+      data$estimate <- data$lower <- data$upper <- NA_real_
+      data$provenance <- mtt$assay
+      data <- rbind(data,result_rows(mtt),result_rows(activity))
+      source_data(data)
+      working(data)
+      example_module(NULL)
+      manual(FALSE)
+      draft_pending(FALSE)
+      manual_snapshot(NULL)
+      updateSelectInput(session,"x",selected="concentration")
+      updateSelectInput(session,"y",selected="response")
+      updateSelectInput(session,"group",selected="group")
+      updateSelectInput(session,"unit",selected="M")
+      updateCheckboxInput(session,"safety_table",value=TRUE)
+      updateSelectInput(session,"safety_display",selected=if(length(viable)<=4L) "editorial" else "summary")
+      updateSelectInput(session,"cc20_source",selected=if(any(data$parameter=="CC20",na.rm=TRUE)) "table" else "regression")
+      updateCheckboxInput(session,"registry_confirm",value=FALSE)
+      updateTabsetPanel(session,"inspector",selected="Gráfica")
+    },error=function(e) showNotification(conditionMessage(e),type="error"))
+  })
+  output$registry_export <- downloadHandler(filename=function() "LDJ-Prism-registro-analitico.json",
+    content=function(file) jsonlite::write_json(analytical_registry(),file,pretty=TRUE,auto_unbox=TRUE,digits=NA))
   output$activity_audit <- renderPrint({
     req(identical(input$module,"activity"))
     d <- visual_data()
