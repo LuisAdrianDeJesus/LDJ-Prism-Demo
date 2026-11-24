@@ -316,6 +316,45 @@ ldj_mtt_synthetic_bundle <- function() {
     synthetic=TRUE)
 }
 
+ldj_mtt_demo_inference <- function(bundle) {
+  stopifnot(isTRUE(bundle$synthetic))
+  keys <- ldj_mtt_defaults()$order
+  stats::setNames(lapply(keys,function(key) {
+    d <- ldj_mtt_bar_data(bundle,key)
+    control <- d$conc_uM==0
+    d$control_type <- ifelse(control,"untreated","treatment")
+    d$experiment_id <- "SYN-MTT-1"
+    d$observation_id <- ifelse(is.na(d$record_id),
+      paste("SYN",key,d$conc_uM,d$replicate,sep=":"),d$record_id)
+    d$independent_unit_id <- d$observation_id
+    d$control_source <- "Demostración sintética LDJ"
+    d$inference_eligible <- TRUE
+    d$.eligible <- TRUE
+    d$.control_type <- d$control_type
+    d$.is_control <- control
+    d$.category <- as.character(d$conc_uM)
+    ldj_mtt_inference(d,"conc_uM","viability","untreated",TRUE)
+  }),keys)
+}
+
+ldj_mtt_demo_annotations <- function(p,result,config,style) {
+  if(!identical(config$show_anova,FALSE)) p <- p+ggplot2::labs(subtitle=result$status)
+  marks <- result$labels
+  if(!is.null(marks) && !identical(config$show_significance,FALSE)) {
+    if(identical(config$show_ns,FALSE)) marks <- marks[marks$label!="ns",,drop=FALSE]
+    ymax <- stats::setNames(p$data$mean+p$data$spread,as.character(p$data$dose))
+    marks$y <- unname(ymax[marks$category])+(config$significance_offset %||% .07)*diff(range(c(0,ymax),finite=TRUE))
+    p <- p+ggplot2::geom_text(data=marks,ggplot2::aes(x=category,y=y,label=label),
+      inherit.aes=FALSE,colour=style$significance,fontface="bold",size=config$significance_size %||% 3)
+    if(!is.null(config$y_limits) && any(is.finite(marks$y))) {
+      ylim <- config$y_limits
+      ylim[2] <- max(ylim[2],max(marks$y,na.rm=TRUE)+.04*diff(ylim))
+      p <- suppressMessages(p+ggplot2::coord_cartesian(ylim=ylim,clip="off"))
+    }
+  }
+  p
+}
+
 ldj_mtt_editor_build <- function(bundle,config=list()) {
   if(!isTRUE(bundle$synthetic)) {
     # Private data must pass the original strict scientific contract.
@@ -388,6 +427,8 @@ ldj_mtt_editor_build <- function(bundle,config=list()) {
               plot.margin=ggplot2::margin(10,18,28,24))
         }
       }
+      if(j==1 && !is.null(config$demo_inference) && !is.null(config$appearance))
+        p <- ldj_mtt_demo_annotations(p,config$demo_inference[[drug]],utils::modifyList(config,pc),s)
       plots[[tag]] <- p
     }
   }

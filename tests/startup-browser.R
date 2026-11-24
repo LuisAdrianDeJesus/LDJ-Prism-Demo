@@ -35,7 +35,10 @@ tryCatch({
   for(fmt in c("svg","pdf")) {
     f <- tempfile(fileext=paste0(".",fmt)); app$get_download(fmt,filename=f)
     stopifnot(file.info(f)$size>10000)
-    if(fmt=="svg") stopifnot(any(grepl("Browser panel title",readLines(f,warn=FALSE),fixed=TRUE)))
+    if(fmt=="svg") {
+      svg <- readLines(f,warn=FALSE)
+      stopifnot(any(grepl("Browser panel title",svg,fixed=TRUE)),sum(grepl("ANOVA F",svg,fixed=TRUE))==4)
+    }
     unlink(f)
   }
   cat("Browser MTT 8-panel editor, per-panel title/HEX/annotation and vector exports: PASS\n")

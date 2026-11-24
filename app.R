@@ -387,6 +387,7 @@ server <- function(input, output, session) {
       "Verifique primero unidades de entrada: la referencia LET está en nM y los campos v4 se llaman conc_uM. LDJ_MTT_UNITS_VERIFIED=true requiere un bundle convertido íntegramente a µM, incluidos modelos e IC."))
     ldj_mtt_read_bundle(root)
   })
+  mtt_demo_inference <- reactive(ldj_mtt_demo_inference(mtt_bundle()))
   observeEvent(input$mtt_apply,{
     tryCatch({
       cfg <- list()
@@ -466,8 +467,10 @@ server <- function(input, output, session) {
     if(isTRUE(b$synthetic)) {
       cfg$short <- stats::setNames(paste("Ejemplo",LETTERS[1:4]),ldj_mtt_defaults()$order)
       cfg$label_significance <- FALSE
+      if(identical(input$mtt_inference,"anova") && identical(input$mtt_reference,"untreated"))
+        cfg$demo_inference <- mtt_demo_inference()
       cfg$plot_caption <- paste("DEMO · datos sintéticos. Medias ±",input$dispersion,
-        "; bandas locales: dispersión observada, no IC del ajuste. Sin contrastes Dunnett inventados.",
+        "; bandas locales: dispersión observada.",
         "Seis controles físicos compartidos entre dos contextos gráficos.",input$caption)
     }
     if(isTRUE(input$mtt_user_data)) {
@@ -480,6 +483,10 @@ server <- function(input, output, session) {
     ldj_mtt_editor_build(b,cfg)
   })
   current_mtt_report <- reactive({
+    req(identical(figure_template(),"mtt4x2"))
+    if(!isTRUE(input$mtt_user_data) && identical(input$mtt_source,"synthetic") &&
+       identical(input$mtt_inference,"anova") && identical(input$mtt_reference,"untreated"))
+      return(mtt_demo_inference())
     req(table_result(),identical(table_snapshot(),analysis_signature()))
     ldj_mtt_inference_report(table_result())
   })
