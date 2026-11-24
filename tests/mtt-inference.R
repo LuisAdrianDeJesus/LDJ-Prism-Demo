@@ -72,3 +72,21 @@ dir.create("test-artifacts",showWarnings=FALSE)
 write.csv(do.call(rbind,comparison),"test-artifacts/mtt-cc50-invariance.csv",row.names=FALSE)
 jsonlite::write_json(ldj_mtt_inference_report(new),"test-artifacts/mtt-anova-reference.json",pretty=TRUE,auto_unbox=TRUE,digits=NA)
 cat("MTT ANOVA and Dunnett reference, physical units, blocked ineligible designs, and identical CC50/CI: PASS\n")
+
+
+# Compact layouts keep one pair per selected compound.
+viability <- data.frame(group=d$series, concentration=d$dose, response=d$response)
+for (n in 1:4) {
+  parameters <- expand.grid(group=series[seq_len(n)],parameter=c("IC50","CC20","CC50"),
+    stringsAsFactors=FALSE)
+  parameters$estimate <- c(IC50=.2,CC20=1,CC50=2)[parameters$parameter]
+  parameters$unit <- "uM"
+  estimates <- ldj_safety_results(parameters,"group")
+  fits <- ldj_safety_editorial(estimates,viability,"concentration","response","group","uM","M","4PL",NULL)
+  stopifnot(length(fits$rows)==n,isTRUE(all.equal(estimates$estimate[estimates$parameter=="SI"],rep(10,n))),
+    inherits(ldj_safety_editorial_plot(fits,ldj_appearance(),"uM"),"patchwork"))
+}
+stopifnot(isTRUE(all.equal(unname(ldj_editorial_dimensions("mtt")*600),c(5130,7260))),
+  isTRUE(all.equal(unname(ldj_editorial_dimensions("activity")*600),c(5070,7200))),
+  isTRUE(all.equal(unname(ldj_editorial_dimensions("safety")*600),c(5010,6270))))
+cat("Editorial reference dimensions and Safety layouts for one to four compounds: PASS\n")

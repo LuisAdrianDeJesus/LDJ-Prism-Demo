@@ -181,7 +181,7 @@ ldj_safety_editorial_plot <- function(result,state,unit,measure="SD",title="",x_
       data.frame(xmin=numeric(),xmax=numeric())
     left <- ggplot2::ggplot(d,ggplot2::aes(dose,response))+
       ggplot2::geom_rect(data=viability,ggplot2::aes(xmin=xmin,xmax=xmax,ymin=80,ymax=100),
-        inherit.aes=FALSE,fill=sf$viability_band %||% "#B9DCCB",alpha=sf$viability_band_alpha %||% .42)+
+        inherit.aes=FALSE,fill=sf$viability_band %||% "#B9DCCB",alpha=sf$viability_band_alpha %||% .25)+
       ggplot2::geom_rect(data=if(state$preset=="editorial") ldj_estimable_dispersion(sums) else sums[FALSE,],
         ggplot2::aes(xmin=xmin,xmax=xmax,ymin=ymin,ymax=ymax),inherit.aes=FALSE,fill=sf$band,alpha=sf$band_alpha %||% .24)+
       ggplot2::geom_errorbar(data=sums,ggplot2::aes(dose,ymin=ymin,ymax=ymax),inherit.aes=FALSE,

@@ -377,7 +377,14 @@ server <- function(input, output, session) {
     else if(!identical(table_snapshot(),analysis_signature())) "Datos o configuración modificados: vuelva a ejecutar el análisis antes de exportar."
     else "Análisis vigente; los cambios visuales conservan los ajustes."
   })
-  mtt_styles <- reactiveVal(list())
+  module_panel_styles <- reactiveVal(list())
+  mtt_styles <- function(value) {
+    module <- input$module %||% "mtt"
+    all_styles <- module_panel_styles()
+    if(missing(value)) return(all_styles[[module]] %||% list())
+    all_styles[[module]] <- value
+    module_panel_styles(all_styles)
+  }
   mtt_bundle <- reactive({
     req(figure_template()=="mtt4x2",input$mtt_source)
     if(identical(input$mtt_source,"synthetic")) return(ldj_mtt_synthetic_bundle())
@@ -441,6 +448,16 @@ server <- function(input, output, session) {
       if(identical(input$module,"safety")) c(width=10,height=8) else c(width=7,height=5)
     updateNumericInput(session,"width",value=dimensions[["width"]])
     updateNumericInput(session,"height",value=dimensions[["height"]])
+  })
+  editorial_rows <- reactive({
+    key <- editorial_module()
+    if(is.null(key)) return(0L)
+    if(key=="mtt") return(4L)
+    max(1L,min(4L,length(color_series())))
+  })
+  observeEvent(editorial_rows(), {
+    tags <- LETTERS[seq_len(2L*editorial_rows())]
+    updateSelectInput(session,"mtt_target",choices=c("Todos los paneles"="all",tags))
   })
   output$editor_context <- renderUI({
     key <- editorial_module()
@@ -526,7 +543,7 @@ server <- function(input, output, session) {
     key <- editorial_module()
     if(is.null(key)) return(plotOutput("plot",height="520px"))
     zoom <- (input$preview_zoom %||% 100)/100
-    rows <- if(key=="activity") max(1,min(4,length(color_series()))) else 4L
+    rows <- editorial_rows()
     dimensions <- ldj_editorial_dimensions(key, rows)
     preview_width <- round(820*zoom)
     preview_max <- paste0(round(100*zoom),"%")
