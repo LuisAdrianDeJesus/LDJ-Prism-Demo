@@ -175,7 +175,9 @@ checkboxInput("multipanel", "Figura multipanel: vista general y detalle por seri
 selectInput("model", "Modelo", c("4PL","3PL")),
 selectInput("threshold_mode", "Definición del umbral", c("Respuesta absoluta"="absolute","Porcentaje de la media del control"="control")),
 selectInput("reason_method","Justificación metodológica",
-  c("Modelo 4PL con mesetas libres"="free","Respuesta normalizada"="normalized","Personalizada"="custom")),
+  c("Modelo 4PL con mesetas libres"="free","Respuesta normalizada"="normalized","Modelo seleccionado mediante comparación de ajustes"="comparison","Personalizada"="custom")),
+conditionalPanel("input.reason_method === 'comparison'",
+  actionButton("compare_models","Comparar 3PL y 4PL (AIC)"),verbatimTextOutput("model_comparison_status")),
 conditionalPanel("input.reason_method === 'custom'",
   textInput("model_reason","Justificación del modelo/restricciones","")),
 selectInput("unit", "Unidad de concentración", c("uM","nM","mM","M")),
@@ -340,7 +342,6 @@ textInput("caption", "Nota al pie", "Datos sintéticos · sin inferencia estadí
 ),
 tabPanel("Exportar",
 
-      
       selectInput("dpi", "Resolución de imagen (dpi)",
                   choices = c("300" = "300", "600" = "600", "900" = "900"),
                   selected = "600"),
@@ -437,6 +438,7 @@ server <- function(input, output, session) {
   run_mtt <- function(incoming=observations()) {
     tryCatch({
       req(selection_ready(),input$group!=".none")
+      verify_model_choice()
       if (!identical(input$threshold_mode,"absolute"))
         stop("Esta plantilla sólo admite ajustes absolutos; el análisis relativo al control no está validado.")
       series <- vapply(1:4,function(i) input[[paste0("mtt_series_",i)]],character(1))
@@ -757,7 +759,7 @@ server <- function(input, output, session) {
   },ignoreInit=TRUE)
   observeEvent(input$model,{
     choices <- c(if(identical(input$model,"3PL")) c("Modelo 3PL con asíntota inferior fijada en cero"="fixed") else
-      c("Modelo 4PL con mesetas libres"="free"),"Respuesta normalizada"="normalized","Personalizada"="custom")
+      c("Modelo 4PL con mesetas libres"="free"),"Respuesta normalizada"="normalized","Modelo seleccionado mediante comparación de ajustes"="comparison","Personalizada"="custom")
     updateSelectInput(session,"reason_method",choices=choices)
   })
   observeEvent(dataset(),{
@@ -1082,6 +1084,38 @@ server <- function(input, output, session) {
     map_data(d,input$x,input$y,input$group,input$decimal)
   })
 
+  comparison_fit <- reactiveVal(NULL)
+  comparison_signature <- reactive(list(data=dataset(),x=input$x,y=input$y,group=input$group,
+    unit=input$unit,threshold=input$threshold_mode,zero=input$zero_policy,control=input$control))
+  observeEvent(input$compare_models,{
+    tryCatch({
+      d <- mapped()
+      fits <- lapply(split(d,d$series),function(series) {
+        scores <- vapply(c("3PL","4PL"),function(model) {
+          fit <- fit_response(series,model,50,input$threshold_mode,input$control,input$zero_policy)
+          as.numeric(stats::AIC(fit$fit))
+        },numeric(1))
+        if(any(!is.finite(scores))) stop("AIC no estimable para ambos modelos.")
+        scores
+      })
+      comparison_fit(list(signature=comparison_signature(),scores=do.call(rbind,fits)))
+    },error=function(e) {
+      comparison_fit(NULL)
+      showNotification(conditionMessage(e),type="error")
+    })
+  })
+  comparison_current <- reactive(!is.null(comparison_fit()) &&
+    identical(comparison_fit()$signature,comparison_signature()))
+  output$model_comparison_status <- renderPrint({
+    if(comparison_current()) print(comparison_fit()$scores) else
+      cat("Ejecute una comparación con los datos y parámetros vigentes.")
+  })
+  verify_model_choice <- function() {
+    if(identical(input$reason_method,"comparison"))
+      validate(need(comparison_current(),"Ejecute primero la comparación 3PL y 4PL."))
+    if(identical(input$reason_method,"custom"))
+      validate(need(nzchar(trimws(input$model_reason %||% "")),"Indique la justificación personalizada."))
+  }
   analysis <- reactive({
     analysis_ready()
     if(is.null(input$module) || input$module=="universal") return(NULL)
@@ -1093,12 +1127,14 @@ server <- function(input, output, session) {
       return(list(table=ldj_safety_results(d,input$group %||% ".none",input$decimal)))
     }
     req(selection_ready())
+    verify_model_choice()
     reason <- if(identical(input$reason_method,"custom")) trimws(input$model_reason %||% "") else
       as.character(input$reason_method %||% "free")
     teaching_example <- original_example("activity")
     if(!nzchar(reason) || (identical(reason,demo_reason) && !identical(dataset(),demo_data) && !teaching_example))
       shiny::validate(shiny::need(FALSE,
         "Antes de ajustar la curva, abra Análisis, justifique el modelo 3PL/4PL y pulse Ejecutar análisis."))
+    if(identical(input$threshold_mode,"control")) inference_data()
     d <- mapped()
     groups <- split(d,d$series)
     fits <- lapply(names(groups),function(g) {
@@ -1219,7 +1255,7 @@ server <- function(input, output, session) {
       jsonlite::write_json(list(schema_version = 1, data = "synthetic",
         settings = values[intersect(ids, names(values))], colors = colors,appearance=appearance(),
         mtt=list(template=figure_template(),source=input$mtt_source,panels=mtt_styles()),
-        analysis=list(threshold_mode=input$threshold_mode,zero_policy=input$zero_policy,model=input$model,model_reason=list(input$reason_method,input$model_reason),experiment=input$experiment_id,control_experiment=input$control_experiment,control_source=input$control_source)),
+        analysis=list(threshold_mode=input$threshold_mode,zero_policy=input$zero_policy,model=input$model,model_reason=input$model_reason,reason_method=input$reason_method,experiment=input$experiment_id,control_experiment=input$control_experiment,control_source=input$control_source)),
         file, pretty = TRUE, auto_unbox = TRUE)
     }
   )
