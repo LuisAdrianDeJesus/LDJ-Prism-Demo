@@ -297,6 +297,8 @@ ldj_color_ui <- function() shiny::tagList(
   shiny::actionButton("scheme_save","Guardar esquema en esta sesión"),
   shiny::selectInput("scheme_saved","Esquemas guardados",choices=NULL),
   shiny::actionButton("scheme_load","Cargar esquema guardado"),
+  shiny::downloadButton("style_json","Exportar estilo completo JSON"),
+  shiny::fileInput("style_import","Restaurar estilo completo JSON",accept=".json"),
   shiny::downloadButton("colors_json","Exportar colores JSON"),
   shiny::fileInput("colors_import","Importar colores JSON",accept=".json"),
   shiny::verbatimTextOutput("color_checks"),shiny::uiOutput("custom_color_inputs"))
@@ -354,6 +356,34 @@ ldj_color_server <- function(input,output,session,series) {
       shiny::updateSelectInput(session,"visual_preset",selected=z$preset)
     },error=function(e) shiny::showNotification(conditionMessage(e),type="error"))
   })
+  output$style_json <- shiny::downloadHandler(filename=function() "LDJ_Prism_estilo.json",content=function(file) {
+    fields <- ldj_style_fields()
+    ids <- c(names(fields$number),names(fields$select),fields$text,fields$logical)
+    settings <- setNames(lapply(ids,function(id) input[[id]]),ids)
+    settings <- Filter(Negate(is.null),settings)
+    jsonlite::write_json(list(schema="ldj-style",version=2,appearance=state(),settings=settings),
+      file,pretty=TRUE,auto_unbox=TRUE,digits=NA)
+  })
+  shiny::observeEvent(input$style_import,{
+    tryCatch({
+      if(input$style_import$size>1e6) stop("JSON demasiado grande.")
+      z <- ldj_validate_style(jsonlite::fromJSON(input$style_import$datapath,simplifyVector=FALSE))
+      fields <- ldj_style_fields()
+      for(id in names(z$settings)) {
+        value <- z$settings[[id]]
+        if(id %in% names(fields$select)) shiny::updateSelectInput(session,id,selected=value)
+        else if(id %in% fields$text) shiny::updateTextInput(session,id,value=value)
+        else if(id %in% fields$logical) shiny::updateCheckboxInput(session,id,value=value)
+        else if(id %in% c("row_weight","layout_left","preview_zoom","axis_x_angle","alpha","line_width"))
+          shiny::updateSliderInput(session,id,value=value)
+        else shiny::updateNumericInput(session,id,value=value)
+      }
+      state(z$appearance)
+      shiny::updateSelectInput(session,"palette",selected=z$appearance$palette)
+      shiny::updateSelectInput(session,"visual_preset",selected=z$appearance$preset)
+    },error=function(e) shiny::showNotification(conditionMessage(e),type="error"))
+  })
+
   state
 }
 
@@ -450,4 +480,60 @@ ldj_editorial_layout <- function(plots, layout=NULL) {
   patchwork::wrap_plots(plots,ncol=2,widths=c(layout$left,1),heights=heights)+
     patchwork::plot_annotation(theme=ggplot2::theme(plot.margin=ggplot2::margin(layout$outer,
       layout$outer,layout$outer,layout$outer)))
+}
+
+ldj_style_fields <- function() {
+  list(
+    number=list(width=c(2,20),height=c(2,20),row_weight=c(.6,2),layout_left=c(.5,2),
+      layout_hgap=c(0,40),layout_vgap=c(0,40),layout_inner=c(0,40),layout_outer=c(0,40),
+      preview_zoom=c(60,150),axis_x_min=c(-Inf,Inf),axis_x_max=c(-Inf,Inf),
+      axis_y_min=c(-Inf,Inf),axis_y_max=c(-Inf,Inf),axis_y_step=c(0,Inf),axis_y_decimals=c(0,8),
+      axis_y_top=c(0,1),axis_y_bottom=c(0,1),axis_y_size=c(4,30),axis_x_size=c(4,30),
+      axis_x_wrap=c(5,60),axis_x_angle=c(0,90),axis_category_padding=c(.2,2),
+      axis_tick_length=c(0,12),axis_tick_width=c(.1,2),font_size=c(7,30),point_size=c(.1,20),
+      alpha=c(0,1),line_width=c(.1,5),mtt_mark_size=c(.5,20),mtt_mark_offset=c(0,1)),
+    select=list(layout_row=as.character(0:4),preview_mode=c("fit","actual"),axis_target=c("all",LETTERS[1:8]),
+      axis_x_mode=c("auto","manual"),axis_y_mode=c("auto","manual"),x_scale=c("linear","log10"),
+      y_scale=c("linear","log10"),axis_y_face=c("plain","bold"),figure_language=c("es","en"),
+      dpi=c("300","600","900"),point_shape=c("16","17","15","18","1"),
+      line_type=c("solid","dashed","dotted","dotdash"),font_family=c("sans","serif","mono"),
+      legend_position=c("right","bottom","top","left","none"),anova_position=c("subtitle","caption"),
+      anova_format=c("compact","decimal","scientific")),
+    text=c("axis_x_breaks","axis_infected","axis_vehicle","plot_title","x_label","y_label","legend_title","caption"),
+    logical=c("axis_y_show","axis_x_scientific","points","grid_lines","mtt_significance","mtt_anova_summary","mtt_show_ns"))
+}
+
+ldj_validate_style <- function(document) {
+  if(identical(document$schema,"ldj-colors"))
+    return(list(appearance=ldj_validate_colors(document),settings=list()))
+  if(!identical(document$schema,"ldj-style") || !identical(as.numeric(document$version),2) ||
+     !is.list(document$settings) || !setequal(names(document),c("schema","version","appearance","settings")))
+    stop("Esquema de estilo desconocido.")
+  settings <- document$settings
+  fields <- ldj_style_fields()
+  keys <- c(names(fields$number),names(fields$select),fields$text,fields$logical)
+  if(anyDuplicated(names(settings)) || length(setdiff(names(settings),keys))) stop("Campo de estilo desconocido.")
+  for(id in names(settings)) {
+    value <- settings[[id]]
+    valid <- length(value)==1L && !is.list(value) && !is.na(value)
+    if(valid) valid <- if(id %in% names(fields$number)) {
+      limits <- fields$number[[id]]
+      is.numeric(value) && is.finite(value) && value>=limits[1] && value<=limits[2]
+    } else if(id %in% names(fields$select)) {
+      is.character(value) && value %in% fields$select[[id]]
+    } else if(id %in% fields$text) is.character(value) && nchar(value)<=1000 else is.logical(value)
+    if(!isTRUE(valid)) stop("Valor de estilo inválido: ",id)
+  }
+  for(axis in c("x","y")) {
+    lo <- settings[[paste0("axis_",axis,"_min")]]
+    hi <- settings[[paste0("axis_",axis,"_max")]]
+    if(identical(settings[[paste0("axis_",axis,"_mode")]],"manual") &&
+       (is.null(lo) || is.null(hi) || lo>=hi ||
+        (identical(settings[[paste0(axis,"_scale")]],"log10") && lo<=0)))
+      stop("Límites manuales incompatibles para el eje ",toupper(axis),".")
+  }
+  raw <- trimws(settings$axis_x_breaks %||% "")
+  if(nzchar(raw) && any(!is.finite(suppressWarnings(as.numeric(strsplit(raw,";",fixed=TRUE)[[1]])))))
+    stop("Las divisiones X deben ser numéricas.")
+  list(appearance=ldj_validate_colors(document$appearance),settings=settings)
 }
