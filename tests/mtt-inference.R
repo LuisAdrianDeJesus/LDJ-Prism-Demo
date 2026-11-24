@@ -29,7 +29,7 @@ for(i in seq_along(series)) {
   stopifnot(isTRUE(all.equal(z$anova,as.data.frame(summary(af)[[1]]))),
     isTRUE(all.equal(z$dunnett$difference,unname(p$coefficients))),
     isTRUE(all.equal(z$dunnett$p_adjusted,unname(p$pvalues),check.attributes=FALSE)),
-    all(z$audit$n==3))
+    all(z$audit$n$n==3))
 }
 for(unit in c("nM","mM","M")) {
   d2 <- d

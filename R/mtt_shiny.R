@@ -60,7 +60,8 @@ ldj_mtt_inference <- function(d,x,y,type="untreated",confirmed=FALSE) {
   out$diagnostics$warnings <- paste(c(
     if(isTRUE(out$diagnostics$shapiro_p < .05)) "Shapiro: revise la normalidad de residuos.",
     if(isTRUE(out$diagnostics$fligner_p < .05)) "Fligner: revise la homogeneidad de varianzas."),collapse=" ")
-  out$audit$n <- table(as.character(included$.category))
+  counts <- table(as.character(included$.category))
+  out$audit$n <- data.frame(condition=names(counts), n=as.integer(counts))
   out$dunnett$category <- out$labels$category
   out$dunnett$significance <- out$labels$label
   out
