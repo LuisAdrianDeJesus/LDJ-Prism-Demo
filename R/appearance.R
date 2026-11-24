@@ -508,6 +508,14 @@ ldj_style_fields <- function() {
 ldj_validate_style <- function(document) {
   if(identical(document$schema,"ldj-colors"))
     return(list(appearance=ldj_validate_colors(document),settings=list()))
+  if(is.list(document) && is.numeric(document$schema_version) && identical(as.numeric(document$schema_version),1)) {
+    fields <- ldj_style_fields()
+    keys <- c(names(fields$number),names(fields$select),fields$text,fields$logical)
+    panels <- if(is.list(document$mtt$panels) && length(document$mtt$panels))
+      list(mtt=document$mtt$panels) else list()
+    document <- list(schema="ldj-style",version=2,appearance=document$appearance,
+      settings=document$settings[intersect(names(document$settings),keys)],panel_styles=panels)
+  }
   if(!identical(document$schema,"ldj-style") || !identical(as.numeric(document$version),2) ||
      !is.list(document$settings) || length(setdiff(names(document),c("schema","version","appearance","settings","panel_styles")))>0)
     stop("Esquema de estilo desconocido.")

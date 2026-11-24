@@ -17,3 +17,8 @@ bad$settings$axis_y_max <- -1
 stopifnot(inherits(try(ldj_validate_style(bad),silent=TRUE),"try-error"))
 style$settings$model <- "3PL"
 stopifnot(inherits(try(ldj_validate_style(style),silent=TRUE),"try-error"))
+
+legacy <- list(schema_version=1,appearance=ldj_appearance(),settings=list(width=8,model="3PL"),
+  mtt=list(panels=list(A=list(title="A. Control",x_limits=list(.1,10)))))
+migrated <- ldj_validate_style(legacy)
+stopifnot(identical(migrated$settings,list(width=8)),identical(migrated$panel_styles$mtt$A$x_limits,c(.1,10)))
