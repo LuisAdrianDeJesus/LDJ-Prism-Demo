@@ -41,6 +41,9 @@ tryCatch({
   app$wait_for_js("document.querySelector('#advanced_analysis').open",timeout=30000)
   screenshot("axis-advanced.png")
   app$run_js("document.querySelector('#advanced_analysis summary').click()")
+  stat_before <- tempfile(fileext=".json")
+  stat_after <- tempfile(fileext=".json")
+  app$get_download("mtt_statistics",filename=stat_before)
   app$set_inputs(inspector="Ejes",axis_y_mode="manual",axis_y_min=0,axis_y_max=80,
     axis_y_step=10,axis_target="all",wait_=FALSE)
   app$wait_for_idle(timeout=90000)
@@ -52,5 +55,10 @@ tryCatch({
   path <- file.path("test-artifacts","axis-manual.svg")
   app$get_download("svg",filename=path)
   stopifnot(any(grepl("recorte visual en Y",readLines(path,warn=FALSE),fixed=TRUE)))
+  app$set_inputs(inspector="Análisis",wait_=FALSE)
+  app$get_download("mtt_statistics",filename=stat_after)
+  stopifnot(identical(readLines(stat_before,warn=FALSE),readLines(stat_after,warn=FALSE)))
+  writeLines("MTT inference JSON is byte-identical after axis, dimensions and zoom edits.",
+    "test-artifacts/axis-invariance.txt")
   cat("Responsive aspect ratio, axis range without data filtering, and controls: PASS\n")
 },finally=app$stop())

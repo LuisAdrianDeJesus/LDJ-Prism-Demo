@@ -143,6 +143,7 @@ tabPanel("Análisis",
 conditionalPanel("input.module === 'mtt'",
   selectInput("mtt_view","Vista MTT",c("Editorial 4 × 2"="editorial","Vista general"="general"))),
 conditionalPanel("input.module === 'mtt' && input.mtt_view !== 'general'",
+tags$details(tags$summary("Tabla MTT, series y controles"),
 selectInput("mtt_source","Fuente MTT",if(private_mode) c("Demostración sintética"="synthetic","Bundle auditado privado (LDJ_MTT_ROOT)"="private") else c("Demostración sintética"="synthetic")),
 checkboxInput("mtt_user_data","Usar tabla seleccionada",FALSE),
 selectInput("mtt_display_unit","Unidad de representación",c("uM","nM","mM","M")),
@@ -156,11 +157,12 @@ tags$details(tags$summary("Asignar controles por serie y experimento"),
   actionButton("mtt_control_apply","Guardar asignaciones de controles"),
   textOutput("mtt_control_status")),
 actionButton("mtt_run","Ejecutar análisis de la tabla"),
-textOutput("mtt_run_status"),
-h4("ANOVA MTT"),tableOutput("mtt_anova_table"),
-h4("Dunnett MTT"),tableOutput("mtt_dunnett_table"),
-tags$details(tags$summary("Diagnósticos y trazabilidad"),verbatimTextOutput("mtt_inference_report")),
-downloadButton("mtt_statistics","Descargar resultados MTT (JSON)")),
+textOutput("mtt_run_status")),
+tags$details(tags$summary("Resultados inferenciales MTT"),
+  h4("ANOVA MTT"),tableOutput("mtt_anova_table"),
+  h4("Dunnett MTT"),tableOutput("mtt_dunnett_table"),
+  verbatimTextOutput("mtt_inference_report"),
+  downloadButton("mtt_statistics","Descargar resultados MTT (JSON)"))),
 actionButton("run_analysis","Ejecutar análisis"),
 textOutput("workflow_status"),
 tags$details(tags$summary("Opciones de tabla, presentación y dosis cero"),
@@ -547,6 +549,7 @@ server <- function(input, output, session) {
   })
   mtt_editable_example <- reactive({
     req(original_example("mtt"))
+    verify_model_choice()
     d <- get_example("mtt")
     ldj_mtt_analyze_table(d,"Concentracion_uM","Viabilidad_pct","Compuesto",unique(d$Compuesto),
       "uM",input$model,inference=identical(input$mtt_inference,"anova"),
@@ -768,6 +771,17 @@ server <- function(input, output, session) {
     experiments <- values(d$experiment_id)
     controls <- if("control_type" %in% names(d)) which(!is.na(d$control_type)&d$control_type!="treatment") else integer()
     control_experiments <- values(d$experiment_id[controls])
+    control_names <- c(untreated="No tratado",infected_untreated="Infectado sin tratamiento",
+      vehicle="Vehículo",negative="Control negativo",positive="Control positivo")
+    types <- intersect(names(control_names),values(d$control_type[controls]))
+    for(id in c("mtt_reference","activity_control_type")) {
+      preferred <- if(id=="mtt_reference") "untreated" else "infected_untreated"
+      previous <- isolate(input[[id]]) %||% ""
+      choices <- if(length(types)) stats::setNames(types,control_names[types]) else c("Sin control físico en la tabla"="")
+      selected <- if(preferred %in% types) preferred else if(previous %in% types) previous else
+        if(length(types)) types[1] else ""
+      updateSelectInput(session,id,choices=choices,selected=selected)
+    }
     for(id in c("experiment_id","control_experiment")) {
       options <- if(id=="experiment_id") experiments else control_experiments
       previous <- isolate(input[[id]]) %||% ""
