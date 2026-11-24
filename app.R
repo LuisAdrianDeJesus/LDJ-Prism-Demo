@@ -662,7 +662,7 @@ server <- function(input, output, session) {
     }
   })
   load_editorial_example <- function(key) {
-    specialized <- key %in% c("activity","safety")
+    specialized <- key %in% c("mtt","activity","safety")
     d <- get_example(key)
     example_module(if(specialized) key else NULL)
     source_data(d)
