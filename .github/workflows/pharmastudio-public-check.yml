@@ -1,0 +1,58 @@
+name: PharmaStudio public demo checks
+on:
+  push:
+    branches: [release/beta-0.10.0-demo]
+  pull_request:
+    branches: [demo]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify the Posit bundle allowlist and checksums
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, pathlib, re
+          m = json.loads(pathlib.Path("manifest.json").read_text())
+          assert m["platform"] == "4.6.0" and m["metadata"]["appmode"] == "shiny"
+          files = {"app.R", *(p.as_posix() for p in pathlib.Path("R").glob("*.R"))}
+          assert files == set(m["files"])
+          for name in files:
+              content = pathlib.Path(name).read_bytes()
+              assert hashlib.md5(content).hexdigest() == m["files"][name]["checksum"], name
+              assert not re.search(rb"LDJ_MTT_(ROOT|UNITS_VERIFIED)|/private/project/|BEGIN [A-Z ]*PRIVATE KEY|gh[pousr]_[A-Za-z0-9]{20,}", content), name
+          assert all(p["Repository"].startswith("https://") and p["Source"] in {"CRAN", "RSPM"}
+                     for p in m["packages"].values())
+          assert "synergyfinder" not in (p.lower() for p in m["packages"])
+          PY
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.6.0'
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::shiny
+            any::ggplot2@4.0.4
+            any::ggrepel
+            any::svglite
+            any::colourpicker
+            any::rhandsontable
+            any::readxl
+            any::writexl
+            any::patchwork
+            any::scales
+            any::jsonlite
+            any::viridisLite
+            any::drc
+            any::multcomp
+      - name: Confirm the catalog and start Shiny
+        run: |
+          Rscript -e 'source("R/synergy_gallery.R"); stopifnot(length(ldj_synergy_gallery()) == 21L)'
+          Rscript -e 'shiny::runApp(".", host="127.0.0.1", port=8765, launch.browser=FALSE)' > /tmp/ldj-public-shiny.log 2>&1 &
+          app_pid=$!
+          trap 'kill "$app_pid" 2>/dev/null || true; cat /tmp/ldj-public-shiny.log' EXIT
+          curl --fail --silent --show-error --retry 15 --retry-connrefused --retry-delay 2 http://127.0.0.1:8765/ > /tmp/ldj-public-index.html
+          grep -F 'LDJ PharmaStudio' /tmp/ldj-public-index.html
