@@ -1,4 +1,4 @@
-# LDJ Prism · Shiny + ggplot2 MVP
+# LDJ PharmaStudio · Shiny + ggplot2
 # Datos sintéticos de demostración; esta aplicación no almacena archivos cargados.
 library(shiny)
 library(ggplot2)
@@ -100,6 +100,7 @@ palette_ldj <- function(n, palette) {
 }
 
 ui <- fluidPage(
+  title = "LDJ PharmaStudio",
   tags$head(tags$style(HTML("
     body { background: #f5f7fa; }
     .well { background: white; border: 1px solid #dde3e9; }
@@ -112,7 +113,7 @@ ui <- fluidPage(
     .ldj-ratio > .shiny-plot-output { position:absolute; inset:0; }
   "))),
   div(class = "title-line",
-      h2("LDJ Prism", style = "margin-bottom: 3px;"),
+      h2("LDJ PharmaStudio", style = "margin-bottom: 3px;"),
       p("Laboratorio de Virología Molecular · Editor de figuras con R y ggplot2",
         class = "help-note")),
   selectInput("module", "Módulo", c("Editor universal"="universal","Citotoxicidad MTT"="mtt",
