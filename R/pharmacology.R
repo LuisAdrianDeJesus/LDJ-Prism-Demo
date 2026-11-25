@@ -68,6 +68,9 @@ ldj_activity_inference <- function(d,x,y,type,experiment,confirmed) {
     needed <- c("experiment_id","observation_id","independent_unit_id",".eligible",".control_type",".is_control",".category")
     if(!isTRUE(confirmed)) stop("Confirme la independencia de las réplicas.")
     if(!all(needed %in% names(d))) stop("Falta independent_unit_id o la trazabilidad del control físico.")
+    selected <- ldj_select_control_reference(d,type)
+    d <- selected$data
+    type <- selected$type
     if(length(experiment)!=1L || is.na(experiment) || !nzchar(experiment)) stop("Seleccione un experimento.")
     keep <- !is.na(d$experiment_id)&d$experiment_id==experiment & (!d$.is_control | d$.control_type==type)
     z <- d[keep,,drop=FALSE]

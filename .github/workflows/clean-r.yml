@@ -1,14 +1,14 @@
 name: Clean Linux R 4.6.0 deployment
 on:
   push:
-    branches: [demo, 'fix/module-navigation-manual-data', 'fix/posit-module-runtime-qa', 'fix/mtt-empty-control-map', 'feature/mtt-anova-dunnett-editorial', 'feature/ldj-prism-editorial-integration', 'feature/ldj-prism-usability-axis-layout']
+    branches: [demo, 'fix/module-navigation-manual-data', 'fix/posit-module-runtime-qa', 'fix/mtt-empty-control-map', 'feature/mtt-anova-dunnett-editorial', 'feature/ldj-prism-editorial-integration', 'feature/ldj-prism-usability-axis-layout', 'feature/ldj-prism-custom-controls-json']
     paths: ['manifest.json', 'app.R', 'R/**', 'tests/**', '.github/workflows/clean-r.yml']
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   verify:
-    if: github.ref == 'refs/heads/demo' || github.ref == 'refs/heads/fix/module-navigation-manual-data' || github.ref == 'refs/heads/fix/posit-module-runtime-qa' || github.ref == 'refs/heads/fix/mtt-empty-control-map' || github.ref == 'refs/heads/feature/mtt-anova-dunnett-editorial' || github.ref == 'refs/heads/feature/ldj-prism-editorial-integration' || github.ref == 'refs/heads/feature/ldj-prism-usability-axis-layout'
+    if: github.ref == 'refs/heads/demo' || github.ref == 'refs/heads/fix/module-navigation-manual-data' || github.ref == 'refs/heads/fix/posit-module-runtime-qa' || github.ref == 'refs/heads/fix/mtt-empty-control-map' || github.ref == 'refs/heads/feature/mtt-anova-dunnett-editorial' || github.ref == 'refs/heads/feature/ldj-prism-editorial-integration' || github.ref == 'refs/heads/feature/ldj-prism-usability-axis-layout' || github.ref == 'refs/heads/feature/ldj-prism-custom-controls-json'
     runs-on: ubuntu-22.04
     env:
       RENV_CONFIG_CACHE_ENABLED: 'FALSE'
@@ -83,12 +83,14 @@ jobs:
           Rscript tests/mtt-editorial.R
           Rscript tests/mtt-inference.R
           Rscript tests/demo-regression.R
+          Rscript tests/style-controls.R
       - name: Chromium first-load and figure export tests
         run: |
           Rscript tests/startup-browser.R
           Rscript tests/runtime-modules-browser.R
           Rscript tests/beta-data-colors-browser.R
           Rscript tests/axis-layout-browser.R
+          Rscript tests/style-restore-browser.R
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
