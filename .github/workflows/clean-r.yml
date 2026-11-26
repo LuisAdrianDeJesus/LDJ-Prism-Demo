@@ -1,14 +1,14 @@
 name: Clean Linux R 4.6.0 deployment
 on:
   push:
-    branches: [demo, 'fix/module-navigation-manual-data', 'fix/posit-module-runtime-qa', 'fix/mtt-empty-control-map', 'feature/mtt-anova-dunnett-editorial', 'feature/ldj-prism-editorial-integration', 'feature/ldj-prism-usability-axis-layout']
+    branches: [demo, 'fix/clean-r-manifest-inventory', 'fix/module-navigation-manual-data', 'fix/posit-module-runtime-qa', 'fix/mtt-empty-control-map', 'feature/mtt-anova-dunnett-editorial', 'feature/ldj-prism-editorial-integration', 'feature/ldj-prism-usability-axis-layout']
     paths: ['manifest.json', 'app.R', 'R/**', 'tests/**', '.github/workflows/clean-r.yml']
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   verify:
-    if: github.ref == 'refs/heads/demo' || github.ref == 'refs/heads/fix/module-navigation-manual-data' || github.ref == 'refs/heads/fix/posit-module-runtime-qa' || github.ref == 'refs/heads/fix/mtt-empty-control-map' || github.ref == 'refs/heads/feature/mtt-anova-dunnett-editorial' || github.ref == 'refs/heads/feature/ldj-prism-editorial-integration' || github.ref == 'refs/heads/feature/ldj-prism-usability-axis-layout'
+    if: github.ref == 'refs/heads/demo' || github.ref == 'refs/heads/fix/clean-r-manifest-inventory' || github.ref == 'refs/heads/fix/module-navigation-manual-data' || github.ref == 'refs/heads/fix/posit-module-runtime-qa' || github.ref == 'refs/heads/fix/mtt-empty-control-map' || github.ref == 'refs/heads/feature/mtt-anova-dunnett-editorial' || github.ref == 'refs/heads/feature/ldj-prism-editorial-integration' || github.ref == 'refs/heads/feature/ldj-prism-usability-axis-layout'
     runs-on: ubuntu-22.04
     env:
       RENV_CONFIG_CACHE_ENABLED: 'FALSE'
@@ -25,9 +25,9 @@ jobs:
         run: |
           install.packages(c("renv", "jsonlite"))
           m <- jsonlite::read_json("manifest.json")
-          files <- c("app.R", file.path("R", c("analysis.R", "appearance.R",
-            "mtt_data_entry.R", "mtt_shiny.R", "mtt_visualization_v4_LDJ_Prism.R",
-            "pharmacology.R")))
+          tracked <- system2("git", c("ls-files", "--", "app.R", "R"), stdout=TRUE)
+          stopifnot(is.null(attr(tracked, "status")), "app.R" %in% tracked)
+          files <- tracked[tracked == "app.R" | grepl("^R/.*[.]R$", tracked)]
           stopifnot(m$platform == "4.6.0", as.character(getRversion()) == m$platform,
             length(m$files) == length(files), setequal(names(m$files), files),
             all(file.exists(files)))
