@@ -43,6 +43,48 @@ tryCatch({
   app$set_inputs(module="synergy",wait_=FALSE)
   app$wait_for_js("Boolean(document.querySelector('#synergy-plot img')?.naturalWidth)",timeout=60000)
   dir.create("test-artifacts",showWarnings=FALSE)
+  app$wait_for_js("(() => { const p=document.querySelector('#synergy-preview_panel'); return p.options.length===7 && p.value==='' && p.options[2].text.includes('Inhibición observada') && document.querySelector('#synergy-quick_numbers').checked && document.querySelector('#synergy-quick_precision').value==='0' && document.querySelector('#synergy-unit').value==='nM' && document.querySelector('#synergy-scenario').value==='didactic' && document.querySelector('#synergy-preview_all').textContent==='Ver todos los paneles'; })()", timeout=60000)
+  initial <- "test-artifacts/initial-didactic.csv"
+  app$get_download("synergy-csv", filename=initial)
+  didactic <- read.csv(initial)
+  stopifnot(nrow(didactic) == 108L, setequal(didactic$experiment_id, paste0("DID-", 1:3)),
+    all(didactic$observed == round(didactic$observed)),
+    setequal(round(unique(didactic$dose_A_M) * 1e9), c(100, 250, 500, 1000, 2000, 4000)))
+  initial_svg <- "test-artifacts/initial-composition.svg"
+  app$get_download("synergy-svg", filename=initial_svg)
+  initial_labels <- svg_text(initial_svg)
+  stopifnot(grepl("Inhibición observada", initial_labels, fixed=TRUE),
+    grepl("Clasificación por unidad", initial_labels, fixed=TRUE),
+    grepl("A nM", initial_labels, fixed=TRUE))
+  browser <- app$get_chromote_session()
+  for (viewport in list(c(390,844), c(768,1024), c(1366,768))) {
+    browser$Emulation$setDeviceMetricsOverride(width=viewport[1], height=viewport[2], deviceScaleFactor=1, mobile=FALSE)
+    app$wait_for_js("(() => {const v=document.querySelector('.ldj-preview');const img=v.querySelector('img');return img && img.width <= v.clientWidth && v.scrollWidth <= v.clientWidth+1 && document.documentElement.scrollWidth <= innerWidth+1;})()", timeout=30000)
+    app$run_js("document.querySelector('.ldj-preview-controls').scrollIntoView({block:'start'})")
+    shot <- browser$Page$captureScreenshot(format="png", captureBeyondViewport=FALSE)
+    writeBin(jsonlite::base64_dec(shot$data), sprintf("test-artifacts/first-load-%dx%d.png", viewport[1], viewport[2]))
+  }
+  browser$Emulation$clearDeviceMetricsOverride()
+  app$set_inputs(`synergy-preview_panel`="B", timeout_=30000)
+  stopifnot(app$get_value(input="synergy-preview_panel") == "B")
+  app$click("synergy-preview_all")
+  app$wait_for_js("document.querySelector('#synergy-preview_panel').value === ''", timeout=30000)
+  app$set_inputs(`synergy-panel_export`="B", timeout_=30000)
+  heat_svg <- "test-artifacts/initial-inhibition.svg"
+  app$get_download("synergy-svg", filename=heat_svg)
+  heat_lines <- readLines(heat_svg, warn=FALSE)
+  integer_labels <- grep(">([0-9]|[1-9][0-9]|100)</text>", heat_lines, value=TRUE)
+  stopifnot(length(integer_labels) >= 36L, !any(grepl(">[0-9]+[.][0-9]+</text>", heat_lines)))
+  app$set_inputs(`synergy-panel_export`="", timeout_=30000)
+  app$run_js("document.querySelector('#synergy-views a[data-value=Datos]').click()")
+  for (scenario in c("second", "generic")) {
+    app$set_inputs(`synergy-scenario`=scenario, timeout_=30000)
+    app$click("synergy-example")
+    app$get_download("synergy-csv", filename=file.path("test-artifacts", paste0("historical-", scenario, ".csv")))
+  }
+  app$run_js("document.querySelector('#synergy-views a[data-value=Clasificación]').click()")
+  app$set_inputs(`synergy-template`="unit", `synergy-map_visible`="legacy",
+    `synergy-map_precision`="auto", `synergy-map_border`="", `synergy-map_small`="expand", timeout_=30000)
   path <- "test-artifacts/synergy-classification.svg"
   app$get_download("synergy-svg",filename=path)
   stopifnot(any(grepl("Clasificación por unidad",readLines(path,warn=FALSE),fixed=TRUE)))
@@ -191,9 +233,10 @@ tryCatch({
   }
   write.csv(scaled, "test-artifacts/editorial-dimensions.csv", row.names = FALSE)
   app$get_download("synergy-csv", filename = "test-artifacts/synergy-style-before.csv")
-  app$set_inputs(`synergy-template` = "class", `synergy-panel_export` = "F",
+  app$set_inputs(`synergy-template` = "class",
     `synergy-class_scope` = "experiment", `synergy-heat_ticks_y` = 4,
     `synergy-benefit_legend` = "Ensayo y condición", timeout_=30000)
+  app$set_inputs(`synergy-panel_export` = "F", timeout_=30000)
   exported_class <- "test-artifacts/classification-by-experiment.svg"
   app$get_download("synergy-svg", filename = exported_class)
   stopifnot(grepl("Clasificación por experimento", svg_text(exported_class), fixed = TRUE))
