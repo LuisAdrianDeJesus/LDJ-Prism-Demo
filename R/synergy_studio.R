@@ -1,16 +1,248 @@
+# Figure preferences only. No numeric analysis or source table is modified.
+ldj_map_fields <- function() list(
+  visible = c("Valores" = "legacy", "Mostrar" = "yes", "Ocultar" = "no"),
+  precision = c("Precisión" = "auto", stats::setNames(as.character(0:4), 0:4)),
+  notation = c("Notación" = "fixed", "Significativas" = "significant", "Científica" = "scientific"),
+  small = c("Valores pequeños" = "expand", "Marcar redondeo" = "mark"),
+  sign = c("Signo positivo" = "no", "Sí" = "yes"),
+  size = list("Tamaño (mm)", 2.6, 1, 8),
+  family = c("Familia" = "sans", "Serif" = "serif", "Monoespaciada" = "mono"),
+  weight = c("Peso" = "plain", "Negrita" = "bold"),
+  alpha = list("Opacidad", 1, .1, 1),
+  ink = list("Color del texto (auto o HEX)", "auto"),
+  horizontal = list("Alineación horizontal", .5, 0, 1),
+  vertical = list("Alineación vertical", .5, 0, 1),
+  prefix = list("Prefijo", ""), suffix = list("Sufijo", ""),
+  nd = list("Etiqueta para ND", "ND"),
+  decimal = c("Separador decimal" = ".", "Coma" = ","),
+  threshold = list("Umbral visual absoluto", 0, 0, 100),
+  coverage = c("Cobertura por celda" = "no", "Sí" = "yes"),
+  scope = c("Datos del mapa" = "summary", "Unidad independiente" = "unit",
+    "Por experimento" = "experiment", "Experimento seleccionado" = "selected"),
+  axes = c("Orden de ejes" = "normal", "Invertir A" = "a", "Invertir B" = "b", "Invertir ambos" = "both"),
+  cells = c("Forma de celdas" = "inherit", "Cuadradas" = "square", "Rectangulares" = "rectangle"),
+  gap = list("Separación de celdas", 0, 0, .4),
+  border = list("Borde (HEX o vacío)", ""),
+  line = list("Grosor de borde (mm)", .2, 0, 2),
+  palette = c("Paleta" = "editorial", "Viridis" = "viridis", "Índigo / coral" = "indigo", "Personalizada" = "custom"),
+  low = list("Color inicial (HEX)", "#287FAE"), mid = list("Color central (HEX)", "#F5F2ED"),
+  high = list("Color final (HEX)", "#6B1E58"), missing = list("Fondo ND (HEX)", "#9CA3AF"),
+  midpoint = list("Centro cromático", 0, -100, 100),
+  minimum = list("Límite inferior (vacío = automático)", ""),
+  maximum = list("Límite superior (vacío = automático)", ""),
+  symmetric = c("Límites de exceso" = "symmetric", "Asimétricos" = "free"),
+  shared = c("Escala de exceso" = "individual", "Compartida entre modelos" = "shared"),
+  breaks = list("Graduaciones de color", 5, 2, 12),
+  legend = c("Posición de leyenda" = "right", "Abajo" = "bottom", "Arriba" = "top", "Izquierda" = "left", "Oculta" = "none"),
+  length = list("Longitud de leyenda (mm)", 28, 12, 85),
+  legend_title = list("Título y unidades de la escala", ""),
+  bubble_size = list("Burbuja máxima (mm)", 4, 1, 10),
+  bubble_positive = list("Símbolo positivo (0–25)", 17, 0, 25),
+  bubble_negative = list("Símbolo negativo (0–25)", 25, 0, 25),
+  contour_line = list("Grosor del contorno (mm)", .5, .1, 2),
+  contour_color = list("Color de contorno (HEX)", "#344054"),
+  surface_palette = c("Paleta de superficie" = "editorial", "Viridis" = "viridis", "Índigo / coral" = "indigo"))
+
+ldj_map_config <- function(incoming) {
+  defs <- ldj_map_fields()
+  stats::setNames(lapply(names(defs), function(key) {
+    def <- defs[[key]]
+    value <- if (is.list(incoming)) incoming[[key]] else NULL
+    if (!is.list(def)) {
+      if (length(value) == 1L && !is.na(value) && value %in% def) return(as.character(value))
+      return(unname(def[[1L]]))
+    }
+    if (length(def) == 4L) {
+      value <- if (is.atomic(value)) suppressWarnings(as.numeric(value)) else NA_real_
+      if (length(value) == 1L && is.finite(value) && value >= def[[3L]] && value <= def[[4L]]) return(value)
+      return(def[[2L]])
+    }
+    if (length(value) != 1L || !is.character(value) || is.na(value) || nchar(value) > 100L) return(def[[2L]])
+    if (key %in% c("ink","border","low","mid","high","missing","contour_color") &&
+        !grepl("^#[[:xdigit:]]{6}$", value) &&
+        !(key == "ink" && value == "auto") && !(key == "border" && !nzchar(value))) return(def[[2L]])
+    value
+  }), names(defs))
+}
+
+ldj_map_controls <- function(ns) {
+  groups <- list("Datos representados" = c("scope", "coverage"), "Ejes y graduaciones" = "axes",
+    "Valores y anotaciones" = c("visible","precision","notation","small","sign","size","family","weight",
+      "alpha","ink","horizontal","vertical","prefix","suffix","nd","decimal","threshold"),
+    "Celdas y escalas cromáticas" = c("cells","gap","border","line","palette","low","mid","high",
+      "missing","midpoint","minimum","maximum","symmetric","shared","breaks"),
+    "Leyendas" = c("legend","length","legend_title"),
+    "Opciones específicas del gráfico" = c("bubble_size","bubble_positive","bubble_negative","contour_line",
+      "contour_color","surface_palette"))
+  defs <- ldj_map_fields()
+  lapply(names(groups), function(group) shiny::tags$details(shiny::tags$summary(group),
+    lapply(groups[[group]], function(key) {
+      def <- defs[[key]]
+      id <- ns(paste0("map_", key))
+      if (is.list(def)) {
+        if (length(def) == 4L) return(shiny::numericInput(id, def[[1L]], def[[2L]], min = def[[3L]], max = def[[4L]]))
+        return(shiny::textInput(id, def[[1L]], def[[2L]]))
+      }
+      shiny::selectInput(id, names(def)[1L], stats::setNames(unname(def),
+        c(unname(def)[1L], names(def)[-1L])))
+    })))
+}
+
+ldj_map_number <- function(x, cfg, default_digits = 1L) {
+  digits <- if (cfg$precision == "auto") default_digits else as.integer(cfg$precision)
+  output <- rep(cfg$nd, length(x))
+  valid <- is.finite(x) & abs(x) >= cfg$threshold
+  output[is.finite(x) & !valid] <- ""
+  shown <- x[valid]
+  if (!length(shown)) return(output)
+  fmt <- function(v, d) switch(cfg$notation,
+    fixed = formatC(v, format = "f", digits = d, decimal.mark = "."),
+    significant = formatC(v, format = "g", digits = max(1L, d), decimal.mark = "."),
+    scientific = formatC(v, format = "e", digits = d, decimal.mark = "."))
+  labels <- trimws(fmt(shown, digits))
+  tiny <- shown != 0 & as.numeric(labels) == 0
+  if (any(tiny)) labels[tiny] <- if (cfg$small == "mark")
+    paste0("≈", ifelse(shown[tiny] < 0, "−", ""), trimws(fmt(0, digits))) else
+    formatC(shown[tiny], format = "e", digits = max(1L, digits), decimal.mark = ".")
+  if (cfg$sign == "yes") labels[shown > 0] <- paste0("+", labels[shown > 0])
+  output[valid] <- paste0(cfg$prefix, sub(".", cfg$decimal, labels, fixed = TRUE), cfg$suffix)
+  output
+}
+
+ldj_map_scale <- function(values, cfg, diverging, high, shared = NULL) {
+  limits <- suppressWarnings(as.numeric(c(cfg$minimum, cfg$maximum)))
+  colors <- switch(cfg$palette, custom = c(cfg$low,cfg$mid,cfg$high),
+    indigo = c("#3A4E92","#F8F3EC","#BC4C46"),
+    c(if (diverging) "#287FAE" else "#F5F2ED", "#F5F2ED", if (diverging) "#6B1E58" else high))
+  if (diverging) {
+    finite <- c(values, shared)
+    finite <- finite[is.finite(finite)]
+    range <- if (length(finite)) range(finite) else c(-1, 1)
+    if (!all(is.finite(limits)) || limits[1] >= limits[2]) limits <- range
+    if (cfg$symmetric == "symmetric" || diff(limits) == 0) {
+      radius <- max(abs(limits - cfg$midpoint), .Machine$double.eps)
+      limits <- cfg$midpoint + c(-radius, radius)
+    }
+  } else if (!all(is.finite(limits)) || limits[1] >= limits[2]) limits <- c(0, 100)
+  bar <- ggplot2::guide_colourbar(barwidth = grid::unit(if (cfg$legend %in% c("bottom","top")) cfg$length else 3, "mm"),
+    barheight = grid::unit(if (cfg$legend %in% c("bottom","top")) 3 else cfg$length, "mm"))
+  args <- list(limits = limits, oob = scales::squish, na.value = cfg$missing,
+    n.breaks = as.integer(cfg$breaks), guide = bar)
+  if (cfg$palette == "viridis") return(do.call(ggplot2::scale_fill_viridis_c, args))
+  if (diverging) do.call(ggplot2::scale_fill_gradient2, c(args,
+    list(low = colors[1], mid = colors[2], high = colors[3], midpoint = cfg$midpoint)))
+  else do.call(ggplot2::scale_fill_gradient, c(args, list(low = colors[1], high = colors[3])))
+}
+
+ldj_map_annotate <- function(plot, data, column, cfg, x = "a", y = "b",
+                             diverging = FALSE, categorical = FALSE, legacy = FALSE,
+                             default_digits = 1L) {
+  values <- data[[column]]
+  show <- cfg$visible == "yes" || (cfg$visible == "legacy" && legacy)
+  label <- if (categorical) ifelse(is.na(values) | values == "ND", cfg$nd, as.character(values)) else
+    ldj_map_number(values, cfg, if (cfg$precision == "auto") default_digits else if (diverging) 1L else 0L)
+  missing <- if (categorical) is.na(values) | values == "ND" else !is.finite(values)
+  if (!show) label[!missing] <- ""
+  if (cfg$visible == "no") label[missing] <- ""
+  if (all(c("evaluated","total") %in% names(data))) {
+    partial <- data$evaluated > 0 & data$evaluated < data$total
+    show_count <- partial | cfg$coverage == "yes"
+    count <- paste0("n=", data$evaluated, "/", data$total)
+    label[show_count] <- ifelse(nzchar(label[show_count]),
+      paste(label[show_count], count[show_count], sep = "\n"), count[show_count])
+  }
+  keep <- nzchar(label)
+  if (!any(keep)) return(plot)
+  data$.label <- label
+  data$.ink <- cfg$ink
+  if (cfg$ink == "auto") {
+    scale <- ggplot2::ggplot_build(plot)$plot$scales$get_scales("fill")
+    mapped <- scale$map(values)
+    mapped[is.na(mapped)] <- cfg$missing
+    rgb <- grDevices::col2rgb(mapped) / 255
+    linear <- ifelse(rgb <= .04045, rgb / 12.92, ((rgb + .055) / 1.055)^2.4)
+    data$.ink <- ifelse(drop(c(.2126,.7152,.0722) %*% linear) > .179, "#000000", "#FFFFFF")
+  }
+  plot + ggplot2::geom_text(data = data[keep, , drop = FALSE],
+    ggplot2::aes(x = .data[[x]], y = .data[[y]], label = .label, colour = .ink),
+    inherit.aes = FALSE, show.legend = FALSE, size = cfg$size, alpha = cfg$alpha,
+    family = cfg$family, fontface = cfg$weight, hjust = cfg$horizontal, vjust = cfg$vertical) +
+    ggplot2::scale_colour_identity()
+}
+
+ldj_numeric_points <- function(plot, data, column, x, y, config, units = "") {
+  if (config$visible != "yes" || !nrow(data)) return(plot)
+  data$.label <- ldj_map_number(data[[column]], config)
+  visible <- nzchar(data$.label)
+  data$.label[visible] <- paste0(data$.label[visible], units)
+  plot + ggplot2::geom_text(data = data[visible, , drop = FALSE],
+    ggplot2::aes(x = .data[[x]], y = .data[[y]], label = .label),
+    inherit.aes = FALSE, show.legend = FALSE,
+    colour = if (config$ink == "auto") "#253043" else config$ink, size = config$size,
+    alpha = config$alpha, family = config$family, fontface = config$weight,
+    hjust = config$horizontal, vjust = config$vertical, nudge_y = .18,
+    check_overlap = TRUE)
+}
+
+ldj_map_aggregate <- function(data, column, scope, selected = "") {
+  data$.value <- data[[column]]
+  if (scope == "selected" && nrow(data)) {
+    selected <- if (selected %in% data$experiment_id) selected else data$experiment_id[1L]
+    data <- data[data$experiment_id == selected, , drop = FALSE]
+  }
+  data$.group <- if (scope == "unit") as.character(data$context) else as.character(data$experiment_id)
+  mean_valid <- function(x) if (any(is.finite(x))) mean(x[is.finite(x)]) else NA_real_
+  parts <- split(data, data$.group)
+  summary <- function(block, by_group = TRUE) {
+    group <- block[c("a","b")]
+    if (by_group) group$.group <- block$.group
+    parts <- stats::aggregate(value ~ ., cbind(group, value = block$.value),
+      mean_valid, na.action = stats::na.pass)
+    counts <- stats::aggregate(cbind(evaluated = as.integer(is.finite(block$.value)),
+      total = rep.int(1L, nrow(block))), group, sum)
+    merge(parts, counts, by = names(group), sort = FALSE)
+  }
+  by_exp <- do.call(rbind, lapply(parts, summary))
+  if (scope != "summary") return(by_exp)
+  pairs <- by_exp[c("a","b")]
+  means <- stats::aggregate(value ~ a+b, by_exp, mean_valid, na.action = stats::na.pass)
+  counts <- stats::aggregate(by_exp[c("evaluated","total")], pairs, sum)
+  counts$total <- length(unique(data$context))
+  merge(means, counts, by = c("a","b"), sort = FALSE)
+}
+
+ldj_didactic_matrix <- function() {
+  dose <- c(0,100,250,500,1000,2000,4000)
+  d <- expand.grid(dose_A = dose, dose_B = dose, experiment_id = paste0("DID-", 1:3),
+    KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
+  a <- c(0,8,17,29,43,58,67)[match(d$dose_A,dose)]
+  b <- c(0,5,12,22,37,50,61)[match(d$dose_B,dose)]
+  combination <- d$dose_A > 0 & d$dose_B > 0
+  shift <- ifelse(d$dose_A <= 1000, 11, -14) + match(d$experiment_id, paste0("DID-",1:3)) - 2
+  d$readout_value <- round(pmax(0, pmin(100, a + b - a*b/100 + combination * shift)))
+  d$biological_replicate_id <- d$experiment_id
+  d$compound_A <- "Didáctico A"; d$compound_B <- "Didáctico B"
+  d$unit_A <- d$unit_B <- "nM"
+  d$readout_type <- "percent_inhibition"
+  d$observation_id <- sprintf("DID-%04d", seq_len(nrow(d)))
+  d
+}
+
 # Display labels only. Physical dose keys stay numeric and unchanged.
 ldj_synergy_dose_labels <- function(doses, digits = 3L, notation = "significant") {
   stopifnot(is.numeric(doses), all(is.finite(doses)), digits %in% 1:15)
   encode <- function(precision) switch(notation,
+    integer = formatC(doses, format = "f", digits = precision - 1L),
     decimal = formatC(doses, format = "f", digits = precision),
     scientific = formatC(doses, format = "e", digits = precision - 1L),
     significant = format(signif(doses, precision), trim = TRUE, scientific = NA, digits = precision))
   labels <- encode(digits)
+  compact <- function(x) sub("\\.$", "", sub("(\\.[0-9]*?)0+$", "\\1", trimws(x), perl = TRUE))
   distinct <- !duplicated(doses)
   for (precision in seq.int(digits, 15L)) {
     labels <- encode(precision)
     if (!anyDuplicated(labels[distinct]) &&
-        !any(doses != 0 & suppressWarnings(as.numeric(labels)) == 0, na.rm = TRUE)) return(labels)
+        !any(doses != 0 & suppressWarnings(as.numeric(labels)) == 0, na.rm = TRUE)) return(compact(labels))
   }
   sprintf("%.17g", doses)
 }
@@ -52,7 +284,7 @@ ldj_synergy_ui <- function(id) {
     shiny::tabsetPanel(id=ns("views"),selected="Clasificación",
       shiny::tabPanel("Datos",
         shiny::numericInput(ns("size"),"Tamaño de la matriz, incluido cero",7,min=5,max=12,step=1),
-        shiny::selectInput(ns("scenario"),"Escenario simulado",c("A"="generic","B"="second")),
+        shiny::selectInput(ns("scenario"),"Escenario simulado",c("A"="generic","B"="second","Didáctica · 7 dosis en nM"="didactic")),
         shiny::actionButton(ns("example"),"Restaurar simulación"),
         shiny::fileInput(ns("file"),"Tabla larga CSV, TSV o Excel",accept=c(".csv",".tsv",".xls",".xlsx")),
         shiny::selectInput(ns("sheet"),"Hoja",choices=NULL),
@@ -109,7 +341,9 @@ ldj_synergy_ui <- function(id) {
             c("Inhibición observada (%)" = "observed", "Exceso (pp)" = "score")),
           shiny::numericInput(ns("gallery_isobole_window"), "Isobola · tolerancia de observaciones (pp)", 10, min = 0, max = 50),
           shiny::numericInput(ns("gallery_isobole_effect"), "Efecto de la isobola (%)", 50, min = 1, max = 99),
-          shiny::checkboxInput(ns("gallery_values"), "Etiquetas numéricas en los mapas", FALSE),
+          shiny::checkboxInput(ns("gallery_values"), "Mostrar valores en el modo heredado", FALSE),
+          shiny::checkboxInput(ns("map_save_instance"), "Guardar ajustes de mapas en esta instancia", FALSE),
+          ldj_map_controls(ns),
           shiny::numericInput(ns("figure_columns"), "Columnas", 2, min = 1, max = 6, step = 1),
           shiny::selectInput(ns("size_preset"), "Dimensiones",
             c("Adaptar a los paneles" = "auto", "Una columna · ancho inicial 3.5 in" = "one",
@@ -120,7 +354,7 @@ ldj_synergy_ui <- function(id) {
           shiny::numericInput(ns("size_height"), "Alto personalizado", 5, min = 0.1),
           shiny::textOutput(ns("size_summary")),
           shiny::selectInput(ns("dose_notation"), "Formato de dosis",
-            c("Cifras significativas" = "significant", "Decimales" = "decimal", "Científico" = "scientific")),
+            c("Cifras significativas" = "significant", "Enteros adaptativos" = "integer", "Decimales compactos" = "decimal", "Científico" = "scientific")),
           shiny::numericInput(ns("dose_digits"), "Cifras / decimales (mínimo)", 3, min = 1, max = 15, step = 1),
           shiny::numericInput(ns("dose_rotation"), "Rotación de etiquetas X (°)", 35, min = 0, max = 90, step = 5),
           shiny::numericInput(ns("dose_ticks"), "Máximo de etiquetas por eje", 6, min = 2, max = 30, step = 1),
@@ -258,7 +492,18 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
     results <- shiny::reactiveVal(ldj_synergy_excess(shiny::isolate(data())))
     stale <- shiny::reactiveVal(FALSE)
     make_demo <- function(size,scenario) {
-      d <- ldj_synergy_demo(size,scenario)
+      teaching <- identical(scenario, "didactic")
+      d <- if (teaching) ldj_didactic_matrix() else ldj_synergy_demo(size,scenario)
+      if (teaching) {
+        shiny::updateSelectInput(session, "unit", selected = "nM")
+        shiny::updateSelectInput(session, "map_visible", selected = "yes")
+        keys <- d[c("dose_A","dose_B","unit_A","unit_B","compound_A","compound_B","experiment_id")]
+        keys$cell_line <- "Didáctica"
+        keys$exposure_hours <- 24
+        activity(transform(keys, activity_pct = d$readout_value))
+        viability(transform(keys, viability_pct = round(100 - 25 * (dose_A + dose_B) / 8000)))
+        benefit_demo(TRUE)
+      }
       z <- ldj_synergy_excess(d)
       data(d); results(z); simulated(TRUE); stale(FALSE)
     }
@@ -376,7 +621,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
     output$experimental_csv <- shiny::downloadHandler(filename = function() paste0("LDJ-", input$experimental_model, "-diagnostico.csv"),
       content = function(path) utils::write.csv(experimental(), path, row.names = FALSE, na = ""))
     output$class_experiment_ui <- shiny::renderUI({
-      shiny::req(identical(input$class_scope, "selected"))
+      shiny::req(identical(input$class_scope, "selected") || identical(input$map_scope, "selected"))
       experiments <- sort(unique(classified()$experiment_id))
       restored <- restored_class_experiment()
       shiny::selectInput(session$ns("class_experiment"), "Experimento", experiments,
@@ -567,6 +812,41 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
           if (identical(input$template, "integral")) 4L else 30L))))
       plot
     }
+    map_keys <- names(ldj_map_fields())
+    map_settings <- function(overrides = NULL) {
+      items <- lapply(map_keys, function(key) {
+        field <- paste0("map_", key)
+        overrides[[field]] %||% input[[field]]
+      })
+      ldj_map_config(stats::setNames(items, map_keys))
+    }
+    map_tiles <- function(plot, cfg, data, column, diverging = FALSE,
+                          categorical = FALSE, legacy = FALSE, digits = 1L,
+                          x = "a", y = "b", shared = NULL) {
+      tile_mapping <- plot$layers[[1L]]$mapping
+      plot$layers[[1L]] <- ggplot2::geom_tile(mapping = tile_mapping,
+        width = 1 - cfg$gap, height = 1 - cfg$gap,
+        colour = if (nzchar(cfg$border)) cfg$border else NA_character_, linewidth = cfg$line)
+      if (!categorical) {
+        high <- ldj_palette_catalog()[[appearance()$palette]]$colors[1]
+        plot <- suppressMessages(plot + ldj_map_scale(data[[column]], cfg, diverging, high, shared))
+      }
+      if (nzchar(cfg$legend_title)) plot <- plot + ggplot2::labs(fill = cfg$legend_title)
+      plot <- plot + ggplot2::theme(legend.position = cfg$legend)
+      if (cfg$cells == "square") plot <- suppressMessages(plot + ggplot2::coord_fixed())
+      if (cfg$cells == "rectangle") plot <- suppressMessages(plot + ggplot2::coord_cartesian())
+      for (axis in c("x","y")) {
+        reverse <- cfg$axes %in% if (axis == "x") c("a","both") else c("b","both")
+        axis_scale <- plot$scales$get_scales(axis)
+        if (reverse && !is.null(axis_scale) && axis_scale$is_discrete()) {
+          scale <- axis_scale$clone()
+          scale$limits <- rev
+          plot <- suppressMessages(plot + scale)
+        }
+      }
+      ldj_map_annotate(plot, data, column, cfg, x = x, y = y, diverging = diverging,
+        categorical = categorical, legacy = legacy, default_digits = digits)
+    }
     benefit_panels <- shiny::reactive({
       d <- benefit()
       shiny::validate(shiny::need(nrow(d) > 0, "La tabla de actividad está vacía."))
@@ -591,11 +871,10 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
           ldj_plot_theme(style) + ggplot2::theme(strip.text = ggplot2::element_text(size = 8,
             margin = ggplot2::margin(3, 3, 3, 3)))
         graph <- dose_axes(graph)
-        if (column == "threshold_class") graph + ggplot2::scale_fill_manual(
-          values = c("Ambos umbrales" = "#157d72", "Por debajo" = "#eadfcf", "ND" = "#9ca3af"))
-        else graph + ggplot2::scale_fill_gradient(low = "#f5f2ed",
-          high = ldj_palette_catalog()[[appearance()$palette]]$colors[1],
-          limits = c(0, 100), na.value = "#9ca3af")
+        if (column == "threshold_class") graph <- graph + ggplot2::scale_fill_manual(
+          values = c("Ambos umbrales" = "#157d72", "Por debajo" = "#eadfcf", "ND" = map_settings()$missing))
+        map_tiles(graph, map_settings(), d, column, categorical = column == "threshold_class",
+          legacy = FALSE, digits = 0L)
       }
       selected <- d[which(d$benefit & d$dose_A_M > 0 & d$dose_B_M > 0), , drop = FALSE]
       region <- ggplot2::ggplot(selected, ggplot2::aes(activity_pct, viability_pct, colour = context)) +
@@ -643,6 +922,10 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         family = input$panel_family %||% "", gap = as.character(input$panel_gap %||% -1),
         ticks_x = as.character(input$panel_ticks_x %||% 0), ticks_y = as.character(input$panel_ticks_y %||% 0),
         min_width = as.character(input$panel_min_width %||% 0), min_height = as.character(input$panel_min_height %||% 0))
+      if (isTRUE(input$map_save_instance)) {
+        config <- map_settings()
+        for (name in map_keys) styles[[key]][[paste0("map_", name)]] <- as.character(config[[name]])
+      }
       if (identical(input$template, "custom")) {
         controls <- c("gallery_surface_mesh", "gallery_surface_alpha", "gallery_surface_points", "gallery_surface_labels", "gallery_marginal_top", "gallery_marginal_right", "gallery_marginal_points", "gallery_density_height", "gallery_density_points", "gallery_density_alpha", "gallery_surface_perspective", "gallery_surface_vertical", "gallery_surface_theta", "gallery_surface_phi", "gallery_density_adjust", "gallery_isobole_effect", "gallery_isobole_window", "gallery_pairs", "gallery_surface_z", "gallery_comparator", "gallery_context", "gallery_marginal_field")
         for (control in controls) {
@@ -682,6 +965,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
           widths = input$gallery_widths %||% "", heights = input$gallery_heights %||% "",
           values = isTRUE(input$gallery_values)),
         heat = heat_settings(),
+        map_presentation = map_settings(),
         classification = list(scope = input$class_scope %||% "unit",
           experiment = input$class_experiment %||% ""),
         visual = list(size_preset = input$size_preset, size_units = input$size_units,
@@ -715,7 +999,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         }
         stopifnot(is.list(v), isTRUE(v$size_preset %in% c("auto", "one", "two", "page", "custom")),
           isTRUE(v$size_units %in% c("in", "cm", "mm")), isTRUE(v$unit %in% c("uM", "nM", "mM", "M")),
-          isTRUE(v$dose_notation %in% c("significant", "decimal", "scientific")),
+          isTRUE(v$dose_notation %in% c("significant", "integer", "decimal", "scientific")),
           valid_number(v$size_width, 0.1, 762), valid_number(v$size_height, 0.1, 762),
           isTRUE(v$dose_digits %in% 1:15), valid_number(v$dose_rotation, 0, 90),
           isTRUE(v$dose_ticks %in% 2:30))
@@ -851,6 +1135,16 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
             }
           }
         }
+        config <- ldj_map_config(x$map_presentation)
+        defs <- ldj_map_fields()
+        for (key in names(config)) {
+          name <- paste0("map_", key)
+          def <- defs[[key]]
+          value <- config[[key]]
+          if (!is.list(def)) shiny::updateSelectInput(session, name, selected = value)
+          else if (length(def) == 4L) shiny::updateNumericInput(session, name, value = value)
+          else shiny::updateTextInput(session, name, value = value)
+        }
         panel_overrides(x$panels)
         shiny::updateSelectInput(session, "template", selected = x$template)
         shiny::updateNumericInput(session, "figure_columns", value = x$columns)
@@ -913,6 +1207,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         ggplot2::guides(x = ggplot2::guide_axis(angle = input$dose_rotation, check.overlap = TRUE)) +
         ggplot2::theme(panel.spacing = grid::unit(heat_cfg$class_spacing, "pt"), legend.position = "bottom")
       map <- heat_style(map) + ggplot2::guides(fill = ggplot2::guide_legend(ncol = 2))
+      map <- map_tiles(map, map_settings(), class_data, "category", categorical = TRUE)
       score <- ggplot2::ggplot(d,ggplot2::aes(observed,score))+
         ggplot2::geom_hline(yintercept=c(-input$cutoff,0,input$cutoff),linetype="dashed",colour=style$reference)+
         ggplot2::geom_point(colour=ldj_palette_catalog()[[state$palette]]$colors[1],na.rm=TRUE)+
@@ -923,33 +1218,21 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         ggplot2::coord_cartesian(clip = "off") +
         ggplot2::labs(title=title)+ggplot2::theme_void()+
         ggplot2::theme(plot.title=ggplot2::element_text(colour=style$title))
-      heat <- function(column,title,diverging=FALSE) {
-        by_experiment <- stats::aggregate(d[[column]],d[c("a","b","experiment_id")],
-          function(x) if(any(is.finite(x))) mean(x,na.rm=TRUE) else NA_real_)
-        names(by_experiment)[4] <- "value"
-        grid <- stats::aggregate(value~a+b,by_experiment,
-          function(x) if(any(is.finite(x))) mean(x,na.rm=TRUE) else NA_real_,na.action=stats::na.pass)
-        p <- ggplot2::ggplot(grid,ggplot2::aes(a,b,fill=value))+ggplot2::geom_tile()+
-          ggplot2::labs(title=title,x=paste("A",input$unit),y=paste("B",input$unit),fill=NULL)+theme
-        p <- dose_axes(p)
-        p <- p + if (diverging) {
-          ggplot2::scale_fill_gradient2(low = "#287FAE", mid = "#F5F2ED", high = "#6B1E58",
-            midpoint = 0, na.value = "#9CA3AF")
-        } else {
-          ggplot2::scale_fill_gradient(low = "#F5F2ED", high = ldj_palette_catalog()[[state$palette]]$colors[1],
-            na.value = "#9CA3AF")
-        }
-        if (isTRUE(input$gallery_values) || anyNA(grid$value)) {
-          grid$label <- ifelse(is.na(grid$value), "ND", if (isTRUE(input$gallery_values)) sprintf("%.1f", grid$value) else "")
-          # Use the trained fill scale, including its missing-value colour.
-          fill <- ggplot2::ggplot_build(p)$plot$scales$get_scales("fill")$map(grid$value)
-          rgb <- grDevices::col2rgb(fill) / 255
-          light <- ifelse(rgb <= .04045, rgb / 12.92, ((rgb + .055) / 1.055)^2.4)
-          grid$ink <- ifelse(drop(c(.2126, .7152, .0722) %*% light) > .179, "#000000", "#FFFFFF")
-          p <- p + ggplot2::geom_text(data = grid, ggplot2::aes(label = label, colour = ink), size = 2.6) +
-            ggplot2::scale_colour_identity()
-        }
-        p
+      heat <- function(column, title, diverging = FALSE, overrides = NULL) {
+        cfg <- map_settings(overrides)
+        grid <- ldj_map_aggregate(d, column, cfg$scope, input$class_experiment %||% "")
+        subtitle <- switch(cfg$scope, summary = "Media de experimentos con igual peso",
+          unit = "Una faceta por unidad", experiment = "Una faceta por experimento",
+          selected = paste("Experimento", unique(grid$.group)))
+        p <- ggplot2::ggplot(grid, ggplot2::aes(a,b,fill=value)) + ggplot2::geom_tile() +
+          ggplot2::labs(title = title, subtitle = subtitle, x = paste("A",input$unit), y = paste("B",input$unit),
+            fill = if (diverging) "Exceso (pp)" else "Inhibición (%)") + theme
+        if (cfg$scope != "summary") p <- p + ggplot2::facet_wrap(~.group, ncol = 2,
+          labeller = ggplot2::label_wrap_gen(24))
+        shared <- if (diverging && cfg$shared == "shared")
+          unlist(d[intersect(c("HSA_excess","Bliss_excess","Loewe_excess"), names(d))], use.names = FALSE)
+        map_tiles(dose_axes(p), cfg, grid, "value", diverging,
+          legacy = isTRUE(input$gallery_values), digits = if (diverging) 1L else 0L, shared = shared)
       }
       count <- ggplot2::ggplot(d,ggplot2::aes(category))+ggplot2::geom_bar(fill=style$axis)+
         ggplot2::labs(title="Conteos por categoría",x=NULL,y="Pares por unidad")+theme+
@@ -1019,6 +1302,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
       }
       build_gallery <- function(id, instance = NULL) {
         cfg <- if (!is.null(instance)) panel_overrides()[[paste("instance", id, instance, sep = "/")]]
+        numeric_style <- map_settings(cfg)
         pref <- function(field, default, limits = NULL, choices = NULL) {
           value <- cfg[[field]] %||% input[[field]] %||% default
           if (!is.null(limits)) {
@@ -1061,8 +1345,8 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         }
         switch(id,
           mono = mono_overview,
-          observed = heat("observed", "Inhibición observada"),
-          interaction = selected_heat,
+          observed = heat("observed", "Inhibición observada", overrides = cfg),
+          interaction = heat(paste0(input$model, "_excess"), input$model, TRUE, cfg),
           observed_expected = {
             valid <- d[is.finite(d$score) & is.finite(d$expected) & is.finite(d$observed), , drop = FALSE]
             if (!nrow(valid)) return(nd("Sin celdas evaluables"))
@@ -1074,20 +1358,21 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
           },
           conditional_a = conditional("a", "b"),
           conditional_b = conditional("b", "a"),
-          forest = forest,
+          forest = if ("estimate" %in% names(forest$data))
+            ldj_numeric_points(forest, forest$data, "estimate", "estimate", "label", numeric_style, " pp") else forest,
           bubble = {
             points <- d
             points$direction <- factor(ifelse(!is.finite(d$score), "ND",
               ifelse(d$score > 0, "Positivo", ifelse(d$score < 0, "Negativo", "Cero"))),
               levels = c("Positivo", "Negativo", "Cero", "ND"))
             points$magnitude <- abs(points$score)
-            ggplot2::ggplot(points, ggplot2::aes(a, b)) +
+            bubble <- ggplot2::ggplot(points, ggplot2::aes(a, b)) +
               ggplot2::geom_point(data = points[is.finite(points$magnitude), ],
-                ggplot2::aes(size = magnitude, shape = direction, colour = direction)) +
+                ggplot2::aes(size = magnitude, shape = direction, colour = direction), alpha = numeric_style$alpha, stroke = numeric_style$line) +
               ggplot2::geom_point(data = points[!is.finite(points$magnitude), ],
                 ggplot2::aes(shape = direction, colour = direction), size = 2) +
-              ggplot2::scale_size_area(max_size = 4, n.breaks = 3) +
-              ggplot2::scale_shape_manual(values = c(Positivo = 17, Negativo = 25, Cero = 1, ND = 4)) +
+              ggplot2::scale_size_area(max_size = numeric_style$bubble_size, n.breaks = 3) +
+              ggplot2::scale_shape_manual(values = c(Positivo = numeric_style$bubble_positive, Negativo = numeric_style$bubble_negative, Cero = 1, ND = 4)) +
               ggplot2::scale_colour_manual(values = c(Positivo = "#6B1E58", Negativo = "#287FAE", Cero = "#59606A", ND = "#59606A")) +
               ggplot2::facet_wrap(~context, ncol = 2, labeller = ggplot2::label_wrap_gen(22)) +
               ggplot2::scale_x_discrete(breaks = function(x) thin_doses(x, 2),
@@ -1097,6 +1382,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
                 y = paste("Dosis B", input$unit), colour = "Dirección", shape = "Dirección", size = "|Exceso| (pp)") + theme +
               ggplot2::theme(legend.position = "bottom", legend.box = "vertical",
                 legend.key.width = grid::unit(10, "pt"), panel.spacing = grid::unit(13, "pt"))
+            ldj_numeric_points(bubble, points, "score", "a", "b", numeric_style)
           },
           dumbbell = {
             if (!nrow(paired)) return(nd("Sin pares con controles y monoterapias correspondientes"))
@@ -1109,7 +1395,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
             tags <- paste(format_dose(paired$dose_A_M), format_dose(paired$dose_B_M),
               sep = " / ")
             tags <- paste(tags, vapply(as.character(paired$context), function(x) paste(strwrap(x, 24), collapse = "\n"), character(1)), sep = "\n")
-            ggplot2::ggplot(paired, ggplot2::aes(y = pair)) +
+            dumbbell <- ggplot2::ggplot(paired, ggplot2::aes(y = pair)) +
               ggplot2::geom_segment(ggplot2::aes(x = reference, xend = observed, yend = pair), colour = style$axis) +
               ggplot2::geom_point(ggplot2::aes(x = reference, shape = "Monoterapia"), colour = "#287FAE", size = 2) +
               ggplot2::geom_point(ggplot2::aes(x = observed, shape = "Combinación"), colour = "#6B1E58", size = 2) +
@@ -1119,16 +1405,18 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
                 switch(comparator, a = "Monoterapia A", b = "Monoterapia B", "Mejor monoterapia"), pair_limit),
                 x = "Inhibición (%)", y = paste("A / B", input$unit), shape = NULL) + theme +
               ggplot2::theme(legend.position = "bottom", axis.text.y = ggplot2::element_text(lineheight = .95))
+            ldj_numeric_points(dumbbell, paired, "observed", "observed", "pair", numeric_style, "%")
           },
           concordance = {
             if (!nrow(shared)) return(nd(comparison_subtitle))
             paired <- comparison_pairs()
-            ggplot2::ggplot(paired, ggplot2::aes(first, second)) +
+            agreement_plot <- ggplot2::ggplot(paired, ggplot2::aes(first, second)) +
               ggplot2::geom_abline(slope = 1, intercept = 0, linetype = 2, colour = style$axis) +
               ggplot2::geom_point(colour = style$point, size = style$size, alpha = style$alpha) +
               ggplot2::facet_wrap(~pair) +
               ggplot2::coord_equal() + ggplot2::labs(title = "Concordancia descriptiva",
                 subtitle = comparison_subtitle, x = "Primer modelo (pp)", y = "Segundo modelo (pp)") + theme
+            ldj_numeric_points(agreement_plot, paired, "second", "first", "second", numeric_style, " pp")
           },
           bland_altman = {
             if (!nrow(shared)) return(nd(comparison_subtitle))
@@ -1196,6 +1484,8 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
               ggplot2::scale_y_discrete(limits = levels(grid$b), breaks = function(x) thin_doses(x, 4)) +
               ggplot2::guides(fill = ggplot2::guide_colorbar(barwidth = grid::unit(20, "mm"))) +
               ggplot2::theme(legend.position = "bottom")
+            main <- map_tiles(main, map_settings(cfg), grid, field, field == "score",
+              legacy = FALSE, digits = if (field == "score") 1L else 0L)
             a <- grid[!duplicated(grid$a), , drop = FALSE]
             b <- grid[!duplicated(grid$b), , drop = FALSE]
             top <- ggplot2::ggplot(a, ggplot2::aes(a, mono_A, group = 1)) +
@@ -1209,8 +1499,9 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
               ggplot2::labs(x = "Mono B (%)", y = NULL) + theme +
               ggplot2::scale_x_continuous(breaks = c(0, 100), limits = c(0, 100)) +
               ggplot2::theme(axis.text.y = ggplot2::element_blank(), axis.ticks.y = ggplot2::element_blank())
-            top <- top + ggplot2::scale_x_discrete(limits = levels(grid$a))
-            right <- right + ggplot2::scale_y_discrete(limits = levels(grid$b))
+            axis_order <- map_settings(cfg)$axes
+            top <- top + ggplot2::scale_x_discrete(limits = if (axis_order %in% c("a","both")) rev(levels(grid$a)) else levels(grid$a))
+            right <- right + ggplot2::scale_y_discrete(limits = if (axis_order %in% c("b","both")) rev(levels(grid$b)) else levels(grid$b))
             composite <- patchwork::wrap_plots(list(top, right, main), design = "A#\nCB",
               widths = c(3, pref("gallery_marginal_right", 1, c(.5, 3))),
               heights = c(pref("gallery_marginal_top", 1, c(.5, 3)), 3))
@@ -1249,6 +1540,10 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
             fill_scale <- if (field == "score")
               ggplot2::scale_fill_gradient2(low = "#287FAE", mid = "#F5F2ED", high = "#6B1E58")
               else ggplot2::scale_fill_gradient(low = "#F5F2ED", high = ldj_series_colors(state, "Inhibición")[[1L]])
+            if (numeric_style$surface_palette == "viridis") fill_scale <- ggplot2::scale_fill_viridis_c()
+            if (numeric_style$surface_palette == "indigo") fill_scale <- if (field == "score")
+              ggplot2::scale_fill_gradient2(low = "#3A4E92", mid = "#F8F3EC", high = "#BC4C46") else
+              ggplot2::scale_fill_gradient(low = "#F8F3EC", high = "#BC4C46")
             ggplot2::ggplot() +
               ggplot2::geom_polygon(data = mesh$faces, ggplot2::aes(u, v, group = face, fill = fill),
                 colour = style$axis, linewidth = pref("gallery_surface_mesh", .25, c(.05, 2)),
@@ -1312,10 +1607,11 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
                 finite[-1, -ncol(values)] & finite[-nrow(values), -ncol(values)])
             }, logical(1)))
             if (!has_square) return(nd("Sin rectángulos completos para interpolar"))
-            ggplot2::ggplot(d, ggplot2::aes(column, row)) +
+            contour <- ggplot2::ggplot(d, ggplot2::aes(column, row)) +
               ggplot2::geom_tile(ggplot2::aes(fill = score)) +
               ggplot2::geom_contour(ggplot2::aes(z = score, linetype = ggplot2::after_stat(factor(level))),
-                breaks = c(-input$cutoff, 0, input$cutoff), colour = style$axis, na.rm = TRUE) +
+                breaks = c(-input$cutoff, 0, input$cutoff), colour = numeric_style$contour_color,
+                linewidth = numeric_style$contour_line, alpha = numeric_style$alpha, na.rm = TRUE) +
               ggplot2::geom_point(data = d[is.finite(d$score), , drop = FALSE], colour = style$axis,
                 shape = 3, size = 1) +
               ggplot2::facet_wrap(~context, ncol = 2, labeller = ggplot2::label_wrap_gen(22)) +
@@ -1328,6 +1624,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
               ggplot2::labs(title = "Contornos de interacción", subtitle = "Interpolación lineal local · cruces: dosis evaluables",
                 x = paste("Dosis A", input$unit), y = paste("Dosis B", input$unit),
                 fill = "Exceso (pp)", linetype = "Nivel (pp)") + theme
+            map_tiles(contour, numeric_style, d, "score", TRUE, x = "column", y = "row")
           },
           raincloud = ,
           ridgeline = {
@@ -1377,7 +1674,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
             block$assay <- interaction(block[c("compound_A", "compound_B", "cell_line", "exposure_hours", "experiment_id")],
               drop = TRUE, sep = " · ")
             block$frontier <- ifelse(block$non_dominated, "Frontera", "Dominado")
-            ggplot2::ggplot(block, ggplot2::aes(activity_pct, viability_pct, shape = frontier, colour = frontier)) +
+            pareto_plot <- ggplot2::ggplot(block, ggplot2::aes(activity_pct, viability_pct, shape = frontier, colour = frontier)) +
               ggplot2::geom_point(size = 2.5) + ggplot2::facet_wrap(~assay, ncol = 2,
                 labeller = ggplot2::label_wrap_gen(width = 30)) +
               ggplot2::scale_shape_manual(values = c(Frontera = 17, Dominado = 1)) +
@@ -1385,6 +1682,8 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
               ggplot2::labs(title = "Frontera de Pareto", subtitle = "Maximizar inhibición y viabilidad in vitro",
                 x = "Inhibición (%)", y = "Viabilidad (%)", shape = NULL, colour = NULL) + theme +
               ggplot2::theme(legend.position = "bottom")
+            ldj_numeric_points(pareto_plot, block[block$non_dominated, , drop = FALSE], "viability_pct",
+              "activity_pct", "viability_pct", numeric_style, "%")
           })
       }
       if (input$template %in% names(gallery_presets)) {
@@ -1411,6 +1710,15 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
       panel_tags <- stats::setNames(names(panels), names(panels))
       for (id in names(panels)) {
         overrides <- panel_overrides()[[panel_key(input$template, id, gallery_presets$custom)]]
+        map_columns <- switch(input$template,
+          class = c(B = "observed", C = paste0(input$model, "_excess")),
+          integral = c(C = "observed", D = "HSA_excess", E = "Bliss_excess", F = "Loewe_excess"),
+          character())
+        if (id %in% names(map_columns) && any(startsWith(names(overrides) %||% character(), "map_"))) {
+          column <- map_columns[[id]]
+          if (column != "Loewe_excess" || any(is.finite(d$Loewe_excess)))
+            panels[[id]] <- heat(column, panels[[id]]$labels$title, column != "observed", overrides)
+        }
         tag <- id
         margin <- ggplot2::margin(8, 10, 7, 8)
         if (!is.null(overrides)) {

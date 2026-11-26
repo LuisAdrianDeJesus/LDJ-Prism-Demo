@@ -1,0 +1,65 @@
+name: General regression of pinned public candidate
+on:
+  push:
+    branches: [feature/beta-0.10.2-editorial]
+  pull_request:
+    branches: [demo]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: apps/ldj-prism
+      - uses: actions/checkout@v4
+        with:
+          ref: be01d67990cff9f1f58cfd70af03392d583939f7
+          sparse-checkout: tests
+          path: audit
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.6.0'
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::shiny
+            any::ggplot2
+            any::ggrepel
+            any::svglite
+            any::colourpicker
+            any::jsonlite
+            any::rsconnect
+            any::cpp11
+            any::readxl
+            any::rhandsontable
+            any::drc
+            any::multcomp
+            any::progress
+            any::RcppArmadillo
+            any::RcppEigen
+            any::patchwork
+            any::writexl
+            any::shinytest2
+            any::colorspace
+            any::viridisLite
+      - name: Synthetic rendering and export tests
+        run: |
+          test "$(git -C apps/ldj-prism rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          Rscript audit/tests/unit.R
+          Rscript audit/tests/smoke.R
+          Rscript audit/tests/mtt-editorial.R
+          Rscript audit/tests/mtt-entry.R
+          Rscript audit/tests/mtt-state.R
+          Rscript audit/tests/appearance.R
+          Rscript audit/tests/pharmacology.R
+      - name: Browser startup without manually initialized inputs
+        run: Rscript audit/tests/startup-browser.R
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ldj-mtt-editorial-synthetic-evidence
+          path: test-artifacts/
