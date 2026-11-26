@@ -66,7 +66,11 @@ tryCatch({
   }
   browser$Emulation$clearDeviceMetricsOverride()
   app$set_inputs(`synergy-preview_panel`="B", timeout_=30000)
-  stopifnot(app$get_value(input="synergy-preview_panel") == "B")
+  app$wait_for_js("document.querySelector('#synergy-preview_panel').value === 'B'", timeout=30000)
+  app$run_js("Shiny.setInputValue('synergy-quick_format', {field:'precision', value:'2'}, {priority:'event'})")
+  app$wait_for_js("document.querySelector('#synergy-quick_precision').value === '2'", timeout=30000)
+  app$run_js("Shiny.setInputValue('synergy-quick_format', {field:'precision', value:'0'}, {priority:'event'})")
+  app$wait_for_js("document.querySelector('#synergy-quick_precision').value === '0'", timeout=30000)
   app$click("synergy-preview_all")
   app$wait_for_js("document.querySelector('#synergy-preview_panel').value === ''", timeout=30000)
   app$set_inputs(`synergy-panel_export`="B", timeout_=30000)
@@ -76,13 +80,19 @@ tryCatch({
   integer_labels <- grep(">([0-9]|[1-9][0-9]|100)</text>", heat_lines, value=TRUE)
   stopifnot(length(integer_labels) >= 36L, !any(grepl(">[0-9]+[.][0-9]+</text>", heat_lines)))
   app$set_inputs(`synergy-panel_export`="", timeout_=30000)
-  app$run_js("document.querySelector('#synergy-views a[data-value=Datos]').click()")
+  app$run_js("document.querySelector(\"#synergy-views a[data-value='Beneficio farmacológico']\").click()")
+  app$wait_for_js("Boolean(document.querySelector('#synergy-benefit_plot img')?.naturalWidth) && document.querySelector('#synergy-benefit_status')?.textContent.includes('0 filas con viabilidad ND')", timeout=60000)
   for (scenario in c("second", "generic")) {
+    app$run_js("document.querySelector('#synergy-views a[data-value=Datos]').click()")
     app$set_inputs(`synergy-scenario`=scenario, timeout_=30000)
     app$click("synergy-example")
+    app$run_js("document.querySelector('#synergy-views a[data-value=Clasificación]').click()")
     app$get_download("synergy-csv", filename=file.path("test-artifacts", paste0("historical-", scenario, ".csv")))
   }
-  app$run_js("document.querySelector('#synergy-views a[data-value=Clasificación]').click()")
+  original_a <- read.csv("test-artifacts/historical-generic.csv")
+  original_b <- read.csv("test-artifacts/historical-second.csv")
+  stopifnot(nrow(original_a) == 108L, nrow(original_b) == 108L,
+    !identical(original_a$observed, original_b$observed))
   app$set_inputs(`synergy-template`="unit", `synergy-map_visible`="legacy",
     `synergy-map_precision`="auto", `synergy-map_border`="", `synergy-map_small`="expand", timeout_=30000)
   path <- "test-artifacts/synergy-classification.svg"

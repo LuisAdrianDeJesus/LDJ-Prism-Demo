@@ -239,7 +239,8 @@ ldj_synergy_dose_labels <- function(doses, digits = 3L, notation = "significant"
     integer = formatC(doses, format = "f", digits = precision - 1L),
     decimal = formatC(doses, format = "f", digits = precision),
     scientific = formatC(doses, format = "e", digits = precision - 1L),
-    significant = format(signif(doses, precision), trim = TRUE, scientific = NA, digits = precision))
+    significant = format(signif(doses, precision), trim = TRUE,
+      scientific = if (all(doses == round(doses))) FALSE else NA, digits = precision))
   labels <- encode(digits)
   compact <- function(x) sub("\\.$", "", sub("(\\.[0-9]*?)0+$", "\\1", trimws(x), perl = TRUE))
   distinct <- !duplicated(doses)
@@ -527,6 +528,10 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         viability = transform(keys, viability_pct = round(100 - 25 * (dose_A + dose_B) / 8000)))
     }
     teaching_tables <- teaching_benefit(teaching)
+    clear_teaching_benefit <- function() {
+      if (identical(activity(), teaching_tables$activity)) activity(NULL)
+      if (identical(viability(), teaching_tables$viability)) viability(NULL)
+    }
     data <- shiny::reactiveVal(teaching)
     simulated <- shiny::reactiveVal(TRUE)
     results <- shiny::reactiveVal(ldj_synergy_excess(shiny::isolate(data())))
@@ -542,8 +547,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         benefit_demo(TRUE)
       } else {
         shiny::updateSelectInput(session, "unit", selected = "uM")
-        if (identical(activity(), teaching_tables$activity)) activity(NULL)
-        if (identical(viability(), teaching_tables$viability)) viability(NULL)
+        clear_teaching_benefit()
       }
       z <- ldj_synergy_excess(d)
       data(d); results(z); simulated(TRUE); stale(FALSE)
@@ -553,6 +557,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
       tryCatch({
         file <- input$file
         d <- ldj_mtt_import_table(file$datapath,file$name,sheet=sheet)
+        clear_teaching_benefit()
         data(d); simulated(FALSE); stale(TRUE)
       },error=function(e) shiny::showNotification(conditionMessage(e),type="error"))
     }
@@ -1351,8 +1356,10 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         chosen <- if (nzchar(context)) context else levels(d$context)[1L]
         d[as.character(d$context) %in% chosen, , drop = FALSE]
       }
-      build_gallery <- function(id, instance = NULL) {
-        cfg <- if (!is.null(instance)) panel_overrides()[[paste("instance", id, instance, sep = "/")]]
+      build_gallery <- function(id, instance = NULL, panel_id = NULL) {
+        key <- if (!is.null(instance)) paste("instance", id, instance, sep = "/") else
+          panel_key(input$template, panel_id)
+        cfg <- panel_overrides()[[key]]
         numeric_style <- map_settings(cfg)
         pref <- function(field, default, limits = NULL, choices = NULL) {
           value <- cfg[[field]] %||% input[[field]] %||% default
@@ -1371,7 +1378,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
           colours <- ldj_series_colors(state, levels_fixed)
           shapes <- stats::setNames(rep(c(16, 1, 17, 2, 15, 0, 18, 5), length.out = length(levels_fixed)),
             levels_fixed)
-          ggplot2::ggplot(valid, ggplot2::aes(x = .data[[axis]], y = observed,
+          curve <- ggplot2::ggplot(valid, ggplot2::aes(x = .data[[axis]], y = observed,
             colour = .data[[fixed]], shape = .data[[fixed]], group = interaction(context, .data[[fixed]]))) +
             ggplot2::geom_line(linewidth = .5, na.rm = TRUE) + ggplot2::geom_point(size = 1.4, na.rm = TRUE) +
             ggplot2::scale_colour_manual(values = colours) + ggplot2::scale_shape_manual(values = shapes) +
@@ -1383,6 +1390,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
               shape = if (fixed == "a") "Dosis A fija" else "Dosis B fija",
               title = ldj_synergy_gallery()[[id]][1L], subtitle = "Perfiles observados") + theme +
             ggplot2::theme(legend.position = "bottom", legend.key.width = grid::unit(9, "pt"))
+          ldj_numeric_points(curve, valid, "observed", axis, "observed", numeric_style, "%")
         }
         paired <- d[is.finite(d$HSA_excess) & is.finite(d$observed), , drop = FALSE]
         common <- d[is.finite(d$HSA_excess) & is.finite(d$Bliss_excess), , drop = FALSE]
@@ -1401,11 +1409,12 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
           observed_expected = {
             valid <- d[is.finite(d$score) & is.finite(d$expected) & is.finite(d$observed), , drop = FALSE]
             if (!nrow(valid)) return(nd("Sin celdas evaluables"))
-            ggplot2::ggplot(valid, ggplot2::aes(expected, observed)) +
+            agreement <- ggplot2::ggplot(valid, ggplot2::aes(expected, observed)) +
               ggplot2::geom_abline(slope = 1, intercept = 0, linetype = 2, colour = style$axis) +
               ggplot2::geom_point(colour = "#287FAE", alpha = .65) +
               ggplot2::coord_equal() + ggplot2::labs(title = "Observado frente a esperado", subtitle = input$model,
                 x = "Esperada (%)", y = "Observada (%)") + theme
+            ldj_numeric_points(agreement, valid, "observed", "expected", "observed", numeric_style, "%")
           },
           conditional_a = conditional("a", "b"),
           conditional_b = conditional("b", "a"),
@@ -1741,7 +1750,8 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         types <- gallery_presets[[input$template]]
         shiny::validate(shiny::need(length(types) > 0L, "Seleccione entre 1 y 12 gráficos con identificadores válidos."))
         panels <- if (identical(input$template, "custom"))
-          Map(build_gallery, unname(types), names(types)) else lapply(types, build_gallery)
+          Map(build_gallery, unname(types), names(types)) else
+            Map(function(type, id) build_gallery(type, panel_id = id), types, LETTERS[seq_along(types)])
       } else panels <- switch(input$template,
         class = list(mono_overview,
           heat(observed_field, observed_title), selected_heat, efficacy, forest, map),
