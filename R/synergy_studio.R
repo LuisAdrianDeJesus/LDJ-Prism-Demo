@@ -932,13 +932,24 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         p <- ggplot2::ggplot(grid,ggplot2::aes(a,b,fill=value))+ggplot2::geom_tile()+
           ggplot2::labs(title=title,x=paste("A",input$unit),y=paste("B",input$unit),fill=NULL)+theme
         p <- dose_axes(p)
+        p <- p + if (diverging) {
+          ggplot2::scale_fill_gradient2(low = "#287FAE", mid = "#F5F2ED", high = "#6B1E58",
+            midpoint = 0, na.value = "#9CA3AF")
+        } else {
+          ggplot2::scale_fill_gradient(low = "#F5F2ED", high = ldj_palette_catalog()[[state$palette]]$colors[1],
+            na.value = "#9CA3AF")
+        }
         if (isTRUE(input$gallery_values) || anyNA(grid$value)) {
           grid$label <- ifelse(is.na(grid$value), "ND", if (isTRUE(input$gallery_values)) sprintf("%.1f", grid$value) else "")
-          p <- p + ggplot2::geom_text(data = grid, ggplot2::aes(label = label), size = 2.6, colour = style$text)
+          # Use the trained fill scale, including its missing-value colour.
+          fill <- ggplot2::ggplot_build(p)$plot$scales$get_scales("fill")$map(grid$value)
+          rgb <- grDevices::col2rgb(fill) / 255
+          light <- ifelse(rgb <= .04045, rgb / 12.92, ((rgb + .055) / 1.055)^2.4)
+          grid$ink <- ifelse(drop(c(.2126, .7152, .0722) %*% light) > .179, "#000000", "#FFFFFF")
+          p <- p + ggplot2::geom_text(data = grid, ggplot2::aes(label = label, colour = ink), size = 2.6) +
+            ggplot2::scale_colour_identity()
         }
-        if(diverging) p+ggplot2::scale_fill_gradient2(low="#287FAE",mid="#F5F2ED",high="#6B1E58",midpoint=0,na.value="#9CA3AF")
-        else p+ggplot2::scale_fill_gradient(low="#f5f2ed",high=ldj_palette_catalog()[[state$palette]]$colors[1],
-          na.value="#9ca3af")
+        p
       }
       count <- ggplot2::ggplot(d,ggplot2::aes(category))+ggplot2::geom_bar(fill=style$axis)+
         ggplot2::labs(title="Conteos por categoría",x=NULL,y="Pares por unidad")+theme+
