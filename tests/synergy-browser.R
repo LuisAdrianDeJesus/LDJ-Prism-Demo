@@ -382,11 +382,15 @@ tryCatch({
   app$get_download("synergy-svg", filename = keyed)
   stopifnot(grepl("Instancia segunda", svg_text(keyed), fixed = TRUE),
     !grepl("Instancia primera", svg_text(keyed), fixed = TRUE))
-  app$set_inputs(`synergy-gallery_sequence` = "observed@integer,observed@decimal",
-    `synergy-panel_export` = "A", `synergy-map_visible` = "yes", `synergy-map_save_instance` = TRUE,
+  app$set_inputs(`synergy-gallery_sequence` = "observed@integer,observed@decimal", timeout_=30000)
+  app$wait_for_js("Array.from(document.querySelector('#synergy-preview_panel').options).filter(x => x.text.includes('Inhibición observada')).length === 2", timeout=30000)
+  app$set_inputs(`synergy-panel_export` = "A", `synergy-map_visible` = "yes", `synergy-map_save_instance` = TRUE,
     `synergy-edit_panel` = "A", `synergy-map_precision` = "0", `synergy-map_prefix` = "INT:",
     timeout_ = 30000)
   app$run_js("document.querySelector('#synergy-save_panel').click()")
+  first_config <- "test-artifacts/numeric-first-instance.json"
+  app$get_download("synergy-figure_json_out", filename = first_config)
+  stopifnot(identical(jsonlite::read_json(first_config)$panels[["instance/observed/integer"]]$map_prefix, "INT:"))
   app$set_inputs(`synergy-edit_panel` = "B", `synergy-map_precision` = "2",
     `synergy-map_prefix` = "DEC:", `synergy-map_palette` = "viridis", timeout_ = 30000)
   app$run_js("document.querySelector('#synergy-save_panel').click()")

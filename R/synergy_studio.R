@@ -2000,9 +2000,11 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
       list(labels = stats::setNames(ids, labels),
         keys = stats::setNames(vapply(ids, function(id) panel_key(input$template, id), ""), ids))
     })
-    prior_keys <- NULL
+    prior_choices <- NULL
     shiny::observeEvent(panel_choices(), {
       choices <- panel_choices()
+      if (identical(choices, prior_choices)) return()
+      prior_keys <- prior_choices$keys
       for (id in c("preview_panel", "edit_panel", "panel_export")) {
         current <- input[[id]] %||% ""
         available <- choices$labels
@@ -2015,7 +2017,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         if (!current %in% available) current <- unname(available[1L])
         shiny::updateSelectInput(session, id, choices = available, selected = current)
       }
-      prior_keys <<- choices$keys
+      prior_choices <<- choices
     })
     shiny::observeEvent(input$preview_all,
       shiny::updateSelectInput(session, "preview_panel", selected = ""))
