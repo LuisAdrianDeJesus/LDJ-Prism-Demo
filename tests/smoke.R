@@ -1,6 +1,6 @@
-# Run from repository root: Rscript tests/smoke.R
+# Run from repository root: Rscript apps/ldj-prism/tests/smoke.R
 env <- new.env()
-sys.source("app.R", envir = env)
+sys.source("apps/ldj-prism/app.R", envir = env)
 stopifnot(nrow(env$demo_data) == 60L,
           identical(env$palette_ldj(2, "Okabe-Ito"), c("#0072B2", "#D55E00")))
 original <- env$demo_data
@@ -36,12 +36,11 @@ shiny::testServer(env$server, {
 })
 cat("Synthetic rendering, export, color mapping, log validation and data integrity: PASS\n")
 
-Sys.setenv(LDJ_PRISM_MODE="private")
-private_env <- new.env()
-sys.source("app.R",envir=private_env)
+public_env <- new.env()
+sys.source("apps/ldj-prism/app.R",envir=public_env)
 csv <- tempfile(fileext=".csv")
 write.csv(data.frame(Dose=c(0,1,2),Response=c(100,70,40),Group="Synthetic"),csv,row.names=FALSE)
-shiny::testServer(private_env$server, {
+shiny::testServer(public_env$server, {
   session$setInputs(separator=",",decimal=".",
     upload=list(name="synthetic.csv",datapath=csv,size=file.info(csv)$size,type="text/csv"))
   session$setInputs(x="Dose",y="Response",group="Group")
@@ -50,14 +49,12 @@ shiny::testServer(private_env$server, {
   stopifnot(nrow(dataset())==3)
 })
 unlink(csv)
-Sys.unsetenv("LDJ_PRISM_MODE")
-cat("Private CSV import, column mapping and restore: PASS\n")
+cat("Public synthetic CSV import, column mapping and restore: PASS\n")
 
-Sys.setenv(LDJ_PRISM_MODE="private")
 xlsx <- tempfile(fileext=".xlsx")
 writexl::write_xlsx(list(First=data.frame(Dose=1:3,Response=c(90,60,30)),
   Second=data.frame(Dose=c(0,2,4),Response=c(100,50,20))),xlsx)
-shiny::testServer(private_env$server, {
+shiny::testServer(public_env$server, {
   session$setInputs(upload=list(name="synthetic.xlsx",datapath=xlsx,
     size=file.info(xlsx)$size,type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
     decimal=".")
@@ -67,7 +64,6 @@ shiny::testServer(private_env$server, {
   stopifnot(isTRUE(all.equal(dataset()$Response,c(90,60,30))))
 })
 unlink(xlsx)
-Sys.unsetenv("LDJ_PRISM_MODE")
 cat("Synthetic XLSX two-sheet import and selection: PASS\n")
 
 shiny::testServer(env$server, {

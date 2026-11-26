@@ -5,6 +5,7 @@ e <- new.env(parent=globalenv())
 sys.source(file.path(root,"R/mtt_visualization_v4_LDJ_Prism.R"),envir=e)
 stopifnot(identical(before,list.files(tempdir(),recursive=TRUE)))
 source(file.path(root,"R/mtt_visualization_v4_LDJ_Prism.R"))
+source(file.path(root,"R/mtt_data_entry.R"))
 source(file.path(root,"R/mtt_shiny.R"))
 b <- ldj_mtt_synthetic_bundle(); snapshot <- serialize(b,NULL)
 out <- ldj_mtt_editor_build(b,list(label_significance=FALSE,
@@ -45,10 +46,33 @@ dim <- readBin(con,integer(),n=2,size=4,endian="big"); close(con)
 stopifnot(identical(dim,c(7200L,10800L)))
 cat("MTT v4: source without side effects; 8 panels; 6 unique shared controls; immutable input; panel styles; SVG/PDF/PNG 600dpi: PASS\n")
 
-source(file.path(root,"R/mtt_data_entry.R"))
-# Treatment-only imported tables need no physical control IDs if the map is empty.
-physical <- data.frame(series="synthetic")
-empty_map <- data.frame(experiment_id=character(),observation_id=character(),series=character())
-stopifnot(identical(ldj_mtt_apply_control_map(physical,"series","synthetic",empty_map),physical))
-stopifnot(inherits(try(ldj_mtt_apply_control_map(physical,"series","synthetic",
-  data.frame(experiment_id="e",observation_id="c",series="synthetic")),silent=TRUE),"try-error"))
+
+# Session-table integration uses different series names and measured units.
+source(file.path(root,"R/analysis.R"))
+d <- b$orig
+d$Series <- paste0("New-",match(d$drug,ldj_mtt_defaults()$order))
+d$Replica <- d$replicate
+d$control_type <- ifelse(d$conc_uM==0,"untreated","treatment")
+d$observation_id <- d$record_id
+d$experiment_id <- "SYN-TABLE"
+d$control_source <- "Synthetic fixture"
+d$inference_eligible <- TRUE
+z <- ldj_mtt_analyze_table(d,"conc_uM","viability","Series",paste0("New-",1:4),"uM")
+snapshot2 <- serialize(z,NULL)
+g <- ldj_mtt_table_figure(z,list(panels=list(A=list(title="Edited session title"))))
+stopifnot(length(g$panels)==8,identical(names(g$panels),LETTERS[1:8]),
+  identical(snapshot2,serialize(z,NULL)),g$panels$A$labels$title=="Edited session title")
+cat("Selected table, arbitrary series names, eight panels and immutable analysis: PASS\\n")
+
+for(selection in list(c("New-1","New-1","New-3","New-4"),c("absent","New-2","New-3","New-4"),c("","New-2","New-3","New-4"))) {
+  stopifnot(inherits(try(ldj_mtt_analyze_table(d,"conc_uM","viability","Series",selection,"uM"),silent=TRUE),"try-error"))
+}
+small <- d[d$conc_uM<.1,]
+stopifnot(inherits(try(ldj_mtt_analyze_table(small,"conc_uM","viability","Series",paste0("New-",1:4),"uM"),silent=TRUE),"try-error"))
+for(unit in c("nM","uM","mM","M")) {
+  converted <- ldj_mtt_display_unit(z,unit)
+  original <- z$rows[[1]]$fit$table$estimate
+  restored <- ldj_convert_concentration(converted$rows[[1]]$fit$table$estimate,unit,z$unit)
+  stopifnot(isTRUE(all.equal(original,restored)),identical(snapshot2,serialize(z,NULL)))
+}
+cat("Negative series validation and physical concentration invariance: PASS\\n")

@@ -1,4 +1,4 @@
-source("R/analysis.R")
+source("apps/ldj-prism/R/analysis.R")
 stopifnot(abs(selectivity(10,1,3,"nM","uM")$SI-300)<1e-10)
 d <- data.frame(dose=rep(c(0,.1,.3,1,3,10,30),each=4))
 d$response <- 100/(1+d$dose/2)+rep(c(-1.5,-.5,.5,1.5),7)
