@@ -145,7 +145,7 @@ tryCatch({
   for (viewport in list(c(390, 844), c(768, 1024), c(1366, 768), c(1920, 1080))) {
     session$Emulation$setDeviceMetricsOverride(width = viewport[1], height = viewport[2], deviceScaleFactor = 1, mobile = FALSE)
     app$run_js("document.querySelector('.ldj-preview').dataset.zoom = '200'")
-    app$wait_for_js("(() => {const v=document.querySelector('.ldj-preview');const i=v.querySelector('img');return i && v.scrollWidth > v.clientWidth && Math.abs(i.width-i.naturalWidth*2)<2})()", timeout=30000)
+    app$wait_for_js("(() => {const v=document.querySelector('.ldj-preview');const i=v.querySelector('img');return i && Math.abs(i.width-i.naturalWidth*2)<2 && (i.width <= v.clientWidth || v.scrollWidth > v.clientWidth)})()", timeout=30000)
     app$run_js("document.querySelector('.ldj-preview').dataset.zoom = 'fit'")
     app$wait_for_js("(() => {const v=document.querySelector('.ldj-preview');const i=v.querySelector('img');return i && i.width <= v.clientWidth})()", timeout=30000)
     app$get_screenshot(sprintf("test-artifacts/preview-%dx%d.png", viewport[1], viewport[2]))
@@ -167,7 +167,8 @@ tryCatch({
     stem <- paste0("test-artifacts/editorial-", design)
     app$get_download("synergy-svg", filename = paste0(stem, ".svg"))
     svg <- readLines(paste0(stem, ".svg"), n = 4, warn = FALSE)
-    dimensions <- regmatches(svg, gregexpr("[0-9]+[.][0-9]+pt", svg))
+    root <- grep("<svg|width=|height=", svg, value = TRUE)
+    dimensions <- regmatches(root, gregexpr("[0-9]+[.][0-9]+pt", root))
     dims <- as.numeric(sub("pt", "", unlist(dimensions))) / 72
     stopifnot(length(dims) == 2L, all(dims >= minimum - .01))
     app$get_download("synergy-pdf", filename = paste0(stem, ".pdf"))

@@ -1232,7 +1232,8 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
             }), use.names = FALSE)
             labels <- ticks[labels, , drop = FALSE]
             labels$label_v <- labels$v + ifelse(labels$axis == "Z", 1, -1) * .045 * diff(range(mesh$points$v))
-            labels$label_u <- labels$u + ifelse(labels$axis == "Z", -.055, 0) * diff(range(mesh$points$u))
+            labels$label_u <- labels$u + ifelse(labels$axis == "Z", -.10,
+              ifelse(labels$axis == "A", .045, -.045)) * diff(range(mesh$points$u))
             fill_scale <- if (field == "score")
               ggplot2::scale_fill_gradient2(low = "#287FAE", mid = "#F5F2ED", high = "#6B1E58")
               else ggplot2::scale_fill_gradient(low = "#F5F2ED", high = ldj_series_colors(state, "Inhibición")[[1L]])
