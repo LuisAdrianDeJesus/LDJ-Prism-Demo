@@ -1202,6 +1202,8 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
       }, error = function(e) shiny::showNotification("Configuración de Figure Studio no válida.", type = "error"))
     })
     figure_panels <- shiny::reactive({
+      shiny::req(input$template, input$model, input$unit, input$cutoff,
+        !is.null(input$panel_order))
       d <- classified()
       d$a <- dose_factor(ldj_convert_concentration(d$dose_A_M,"M",input$unit))
       d$b <- dose_factor(ldj_convert_concentration(d$dose_B_M,"M",input$unit))
@@ -1987,6 +1989,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
       sprintf("%.2f × %.2f in%s", size[["width"]], size[["height"]], note)
     })
     panel_choices <- shiny::reactive({
+      shiny::req(identical(input$views, "Clasificación"))
       panels <- figure_panels()
       ids <- names(panels)
       labels <- vapply(ids, function(id) {

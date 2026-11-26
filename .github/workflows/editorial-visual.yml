@@ -65,6 +65,11 @@ jobs:
           LDJ_TEST_ZIP: absent
         run: |
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          chrome="$(command -v google-chrome)"
+          wrapper="$RUNNER_TEMP/ldj-chrome"
+          printf '#!/bin/sh\nexec "%s" --no-sandbox --disable-dev-shm-usage "$@"\n' "$chrome" > "$wrapper"
+          chmod +x "$wrapper"
+          export CHROMOTE_CHROME="$wrapper"
           Rscript ../audit/tests/numeric-editorial.R
           Rscript ../audit/tests/synergy-browser.R
       - name: Exercise long labels and dense synthetic matrices

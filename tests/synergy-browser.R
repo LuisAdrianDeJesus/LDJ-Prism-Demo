@@ -26,8 +26,13 @@ stopifnot(identical(ldj_synergy_pareto(pareto_fixture), c(TRUE, FALSE, TRUE, TRU
   identical(ldj_synergy_gallery_design("AB/CC", 3), "AB\nCC"),
   inherits(try(ldj_synergy_gallery_design("AB/BA", 2), silent = TRUE), "try-error"))
 chrome <- Sys.which("google-chrome")
-if(nzchar(chrome)) Sys.setenv(CHROMOTE_CHROME=chrome)
-app <- shinytest2::AppDriver$new(app_dir=".",name="synergy",load_timeout=90000)
+if (nzchar(chrome) && !nzchar(Sys.getenv("CHROMOTE_CHROME"))) Sys.setenv(CHROMOTE_CHROME=chrome)
+app <- tryCatch(shinytest2::AppDriver$new(app_dir=".",name="synergy",load_timeout=90000),
+  error=function(error) {
+    if (!grepl("Chrome debugging port not open", conditionMessage(error), fixed=TRUE)) stop(error)
+    message("Chromium startup timed out; retrying browser initialization once.")
+    shinytest2::AppDriver$new(app_dir=".",name="synergy-retry",load_timeout=90000)
+  })
 svg_text <- function(path) {
   parser <- paste(
     "import sys, xml.etree.ElementTree as ET",
