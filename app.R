@@ -1,4 +1,4 @@
-# LDJ Prism · Shiny + ggplot2 MVP
+# LDJ PharmaStudio · Shiny + ggplot2
 # Datos sintéticos de demostración; esta aplicación no almacena archivos cargados.
 library(shiny)
 library(ggplot2)
@@ -7,9 +7,8 @@ library(colourpicker)
 library(rhandsontable)
 library(readxl)
 source(if(file.exists("R/analysis.R")) "R/analysis.R" else "apps/ldj-prism/R/analysis.R", local=TRUE)
-for(module_file in c("mtt_visualization_v4_LDJ_Prism.R","mtt_data_entry.R","mtt_shiny.R","pharmacology.R"))
+for(module_file in c("mtt_visualization_v4_LDJ_Prism.R","mtt_data_entry.R","mtt_shiny.R","pharmacology.R","synergy_data.R","synergy_models.R","synergy_bootstrap.R","synergy_benefit.R","synergy_reference.R","synergy_loewe_native.R","synergy_gallery.R","synergy_studio.R"))
   source(file.path(if(dir.exists("R")) "R" else "apps/ldj-prism/R",module_file),local=TRUE)
-private_mode <- identical(Sys.getenv("LDJ_PRISM_MODE"), "private")
 data_entry_enabled <- TRUE
 
 demo_data <- local({
@@ -100,6 +99,7 @@ palette_ldj <- function(n, palette) {
 }
 
 ui <- fluidPage(
+  title = "LDJ PharmaStudio",
   tags$head(tags$style(HTML("
     body { background: #f5f7fa; }
     .well { background: white; border: 1px solid #dde3e9; }
@@ -112,11 +112,12 @@ ui <- fluidPage(
     .ldj-ratio > .shiny-plot-output { position:absolute; inset:0; }
   "))),
   div(class = "title-line",
-      h2("LDJ Prism", style = "margin-bottom: 3px;"),
+      h2("LDJ PharmaStudio", style = "margin-bottom: 3px;"),
       p("Laboratorio de Virología Molecular · Editor de figuras con R y ggplot2",
         class = "help-note")),
   selectInput("module", "Módulo", c("Editor universal"="universal","Citotoxicidad MTT"="mtt",
-    "Actividad farmacológica"="activity","Potencia y seguridad"="safety")),
+    "Actividad farmacológica"="activity","Potencia y seguridad"="safety",
+    "Synergy Studio — Combinaciones farmacológicas"="synergy")),
   sidebarLayout(
     sidebarPanel(width = 3, class="sidebar-panel",
       tabsetPanel(id = "inspector", type = "tabs", selected="Gráfica",
@@ -126,7 +127,7 @@ checkboxInput("has_header","El archivo incluye encabezados",TRUE),
 textInput("column_names","Nombres de columnas separados por coma",""),
 actionButton("rename_columns","Renombrar columnas"),
 actionButton("add_row","Añadir fila"),actionButton("add_column","Añadir columna"),
-p(if(private_mode) "Entorno privado configurado." else "Demo pública: utilice únicamente tablas no confidenciales."),
+p("Demo pública: utilice únicamente tablas no confidenciales."),
       uiOutput("import_controls"),
       tags$details(tags$summary("Pegar tabla desde Excel (bloque tabulado)"),
         textAreaInput("paste_tsv","Pegue filas y columnas tabuladas",rows=5),
@@ -144,7 +145,7 @@ conditionalPanel("input.module === 'mtt'",
   selectInput("mtt_view","Vista MTT",c("Editorial 4 × 2"="editorial","Vista general"="general"))),
 conditionalPanel("input.module === 'mtt' && input.mtt_view !== 'general'",
 tags$details(tags$summary("Tabla MTT, series y controles"),
-selectInput("mtt_source","Fuente MTT",if(private_mode) c("Demostración sintética"="synthetic","Bundle auditado privado (LDJ_MTT_ROOT)"="private") else c("Demostración sintética"="synthetic")),
+selectInput("mtt_source", "Fuente MTT", c("Demostración sintética" = "synthetic")),
 checkboxInput("mtt_user_data","Usar tabla seleccionada",FALSE),
 selectInput("mtt_display_unit","Unidad de representación",c("uM","nM","mM","M")),
 selectInput("mtt_series_1","Serie A/B",choices=NULL),
@@ -196,7 +197,7 @@ tags$details(id="advanced_analysis",tags$summary("Configuración avanzada · ANO
   conditionalPanel("input.provenance_choice === 'custom'",
     textInput("control_source","Procedencia personalizada","")),
   selectInput("unit_id_field","Columna de unidad experimental independiente",choices=c("independent_unit_id")),
-  helpText("Use una unidad física por réplica. Crear un identificador administrativo no acredita independencia ni procedencia."),
+  helpText("Use control_set_id para registrar explícitamente un conjunto de controles compartidos. Use una unidad física por réplica. Crear un identificador administrativo no acredita independencia ni procedencia."),
   checkboxInput("independent", "Confirmo réplicas independientes y control del mismo experimento", FALSE),
   numericInput("control", "Concentración del control", 0, min=0),
   conditionalPanel("input.module === 'mtt'",
@@ -359,6 +360,8 @@ downloadButton("config", "Configuración JSON")
         class = "help-note", style = "margin-top: 12px;")
     ),
     mainPanel(width = 9, class="main-panel",
+      conditionalPanel("input.module === 'synergy'",ldj_synergy_ui("synergy")),
+      conditionalPanel("input.module !== 'synergy'",
       textOutput("demo_indicator"),
       conditionalPanel("input.inspector === 'Datos'",
         wellPanel(h3("1. Datos"),selectInput("entry_type","Tipo de entrada",
@@ -393,7 +396,7 @@ downloadButton("config", "Configuración JSON")
         downloadButton("registry_export","Exportar registro de sesión (JSON)"),
         tableOutput("results"), conditionalPanel("input.module == 'activity'",verbatimTextOutput("activity_audit")), tableOutput("anova"), tableOutput("diagnostics"), tableOutput("comparisons")),
       p("Piloto con datos sintéticos. Las opciones visuales no modifican la tabla original.",
-        class = "help-note")
+        class = "help-note"))
     )
   )
 )
@@ -416,7 +419,8 @@ server <- function(input, output, session) {
     if(is.null(input$group)||input$group==".none"||!input$group%in%names(dataset())) return("Datos")
     z <- as.character(dataset()[[input$group]]);sort(unique(z[!is.na(z)&nzchar(z)]))
   })
-  appearance <- ldj_color_server(input,output,session,color_series)
+  module_panel_styles <- reactiveVal(list())
+  appearance <- ldj_color_server(input,output,session,color_series,module_panel_styles)
   table_result <- reactiveVal(NULL)
   table_snapshot <- reactiveVal(NULL)
   mtt_control_map <- reactiveVal(NULL)
@@ -457,10 +461,9 @@ server <- function(input, output, session) {
   observeEvent(input$mtt_run,run_mtt())
   output$mtt_run_status <- renderText({
     if(is.null(table_result())) "Seleccione columnas, unidad y series; ejecute el análisis."
-    else if(!identical(table_snapshot(),analysis_signature())) "Datos o configuración modificados: vuelva a ejecutar el análisis antes de exportar."
+    else if(draft_pending() || !identical(table_snapshot(),analysis_signature())) "Datos o configuración modificados: vuelva a ejecutar el análisis antes de exportar."
     else "Análisis vigente; los cambios visuales conservan los ajustes."
   })
-  module_panel_styles <- reactiveVal(list())
   mtt_styles <- function(value) {
     module <- input$module %||% "mtt"
     all_styles <- module_panel_styles()
@@ -470,13 +473,8 @@ server <- function(input, output, session) {
   }
   mtt_bundle <- reactive({
     req(figure_template()=="mtt4x2",input$mtt_source)
-    if(identical(input$mtt_source,"synthetic")) return(ldj_mtt_synthetic_bundle())
-    req(private_mode)
-    root <- Sys.getenv("LDJ_MTT_ROOT")
-    validate(need(nzchar(root),"Configure LDJ_MTT_ROOT en el entorno privado autorizado."))
-    validate(need(identical(Sys.getenv("LDJ_MTT_UNITS_VERIFIED"),"true"),
-      "Verifique primero unidades de entrada: la referencia LET está en nM y los campos v4 se llaman conc_uM. LDJ_MTT_UNITS_VERIFIED=true requiere un bundle convertido íntegramente a µM, incluidos modelos e IC."))
-    ldj_mtt_read_bundle(root)
+    req(identical(input$mtt_source, "synthetic"))
+    ldj_mtt_synthetic_bundle()
   })
   mtt_demo_inference <- reactive(ldj_mtt_demo_inference(mtt_bundle()))
   observeEvent(input$mtt_apply,{
@@ -657,6 +655,7 @@ server <- function(input, output, session) {
     req(width>0,height>0)
     c(width=width,height=height)
   })
+  ldj_synergy_server("synergy",appearance,figure_size)
   output$layout_ratio <- renderText({
     size <- figure_size()
     rows <- max(editorial_rows(),1)
@@ -774,11 +773,13 @@ server <- function(input, output, session) {
     control_names <- c(untreated="No tratado",infected_untreated="Infectado sin tratamiento",
       vehicle="Vehículo",negative="Control negativo",positive="Control positivo")
     types <- intersect(names(control_names),values(d$control_type[controls]))
+    physical_choices <- ldj_control_reference_choices(d)
     for(id in c("mtt_reference","activity_control_type")) {
       preferred <- if(id=="mtt_reference") "untreated" else "infected_untreated"
       previous <- isolate(input[[id]]) %||% ""
       choices <- if(length(types)) stats::setNames(types,control_names[types]) else c("Sin control físico en la tabla"="")
-      selected <- if(preferred %in% types) preferred else if(previous %in% types) previous else
+      choices <- c(choices,physical_choices)
+      selected <- if(previous %in% unname(physical_choices)) previous else if(preferred %in% types) preferred else if(previous %in% types) previous else
         if(length(types)) types[1] else ""
       updateSelectInput(session,id,choices=choices,selected=selected)
     }
@@ -917,13 +918,14 @@ server <- function(input, output, session) {
       if(!any(rows)) stop("Indique un parámetro IC50, CC20 o CC50.")
       ldj_safety_results(d[rows,,drop=FALSE],"group",input$decimal %||% ".")
     }
-    if(!is.null(example_module()) && !identical(grid_values(d),grid_values(working())))
+    if (!identical(grid_values(d), grid_values(working()))) {
       mark_edited_example()
-    working(d)
+      manual_snapshot(NULL)
+      working(d)
+    }
     draft_pending(FALSE)
   }
   observeEvent(input$grid, {
-    if(!manual() && is.null(example_module())) return()
     changes <- input$grid$changes
     if(identical(changes$event,"afterChange") && is.null(changes$changes)) return()
     if(is.null(changes$event)) return()
@@ -959,7 +961,7 @@ server <- function(input, output, session) {
   })
   output$table_state <- renderText(if(manual()) "Tabla manual. Confirme los cambios antes de analizar." else
     "Tabla de sesión. Puede editarla o crear una tabla independiente.")
-  output$workflow_status <- renderText(if(manual() && (draft_pending() || !identical(manual_snapshot(),run_signature())))
+  output$workflow_status <- renderText(if(draft_pending() || (manual() && !identical(manual_snapshot(),run_signature())))
     "Datos o ajustes pendientes de analizar." else "La figura usa los datos confirmados.")
   output$import_controls <- renderUI({
     tagList(fileInput("upload", "Importar CSV/TSV/XLS/XLSX no confidencial", accept=c(".csv",".tsv",".xls",".xlsx")),
@@ -1602,7 +1604,7 @@ server <- function(input, output, session) {
         "· los cambios de estilo conservan estimaciones y controles.")))
     p(class = "help-note",
       paste(nrow(dataset()), "filas ·", ncol(dataset()),
-            "columnas · datos", if(private_mode) "de sesión privada" else "sintéticos"))
+            "columnas · datos", "sintéticos"))
   })
   export_plot <- function(file, format) {
     analysis_ready()

@@ -1,11 +1,4 @@
-#!/usr/bin/env Rscript
-# LDJ Prism — MTT Figure 4x2, refactor of mtt_visualization_v4.R
-# This module IS NOT a new statistical analysis. It visualizes audited inputs.
-# Importing/source() has no side effects: no global library paths, no file reads,
-# no ggplot exports, no model refits. Suitable for Shiny reactive() calls.
-# Source reference: mtt_visualization_v4.R (user-supplied).
-# IMPORTANT: LET input column is conc_uM in the source; do NOT relabel as nM
-# until its original units and any necessary conversion have been verified.
+# Plantilla MTT 4 × 2 para la demostración de LDJ PharmaStudio.
 
 ldj_mtt_required_packages <- function() {
   packages <- c("ggplot2", "ggrepel", "patchwork", "svglite", "drc")
@@ -41,7 +34,6 @@ ldj_mtt_defaults <- function() {
     curve_band = TRUE,              # Local observed mean +/- SD, NOT a CI.
     plot_caption = paste(
       "Bars: mean ± SD and individual observations; stars: Dunnett-adjusted comparisons.",
-      "LET and Lopinavir share six physical PI-assigned controls; correspondence by run remains pending.",
       "Dose-response ribbons represent local observed mean ± SD, not confidence intervals.",
       "Lopinavir CC50 uses the documented constrained 3PL model (lower asymptote 0)."
     ),
@@ -59,32 +51,6 @@ ldj_mtt_panel <- function(config, panel_tag) {
   p <- config$panels[[panel_tag]]
   if (is.null(p)) p <- list()
   utils::modifyList(config, p)
-}
-
-ldj_mtt_read_csv <- function(path) {
-  if (!file.exists(path)) stop("Falta archivo de entrada: ", path)
-  utils::read.csv(path, na.strings = c("", "NA"), check.names = FALSE,
-                  stringsAsFactors = FALSE)
-}
-
-ldj_mtt_read_bundle <- function(root = ".") {
-  # Explicit, immutable upstream inputs. Work should preserve their hashes.
-  # There is intentionally no fallback to fabricated curves or p values.
-  get <- function(path) ldj_mtt_read_csv(file.path(root, path))
-  model_file <- file.path(root, "results", "mtt", "pi_assigned_shared_controls_v4",
-                          "nonlinear_models_v4.rds")
-  if (!file.exists(model_file)) stop("Falta modelo RDS auditado: ", model_file)
-  out <- list(
-    orig = get("data/mtt_viability_tidy.csv"),
-    controls = get("data/mtt_pi_assigned_shared_controls_registry.csv"),
-    cc50 = get("results/mtt/pi_assigned_shared_controls_v4/cc50_consolidated_v4.csv"),
-    dunnett_shared = get("results/mtt/pi_assigned_shared_controls_v4/let_lopinavir_dunnett.csv"),
-    dunnett_original = get("results/mtt/dunnett_cdq_dtg.csv"),
-    cdq_dtg_4pl = get("results/mtt/mtt_4pl_cc50.csv"),
-    models = readRDS(model_file)
-  )
-  ldj_mtt_validate_bundle(out)
-  out
 }
 
 ldj_mtt_columns <- function(df, names_expected, table_name) {
@@ -441,14 +407,4 @@ ldj_mtt_export <- function(result, filename,
     bg = "white", limitsize = FALSE)
   invisible(normalizePath(filename, mustWork = TRUE))
 }
-
-# Standalone CLI wrapper, opt-in only; Shiny should call ldj_mtt_build() directly:
-#   source("R/ldj_mtt_figures.R", local=TRUE)
-#   bundle <- ldj_mtt_read_bundle("/private/project/Alan")
-#   result <- ldj_mtt_build(bundle, list(font_family="sans",
-#     panels=list(A=list(title="A. Viabilidad DTG",y_limits=c(0,130)),
-#                 B=list(title="B. Curva DTG"))))
-#   output$figure <- shiny::renderPlot(result$figure)
-#   ldj_mtt_export(result, "MTT_4x2.svg")
-# No data files or RDS models should be uploaded to the public demo.
 

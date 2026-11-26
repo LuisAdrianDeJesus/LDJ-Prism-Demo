@@ -4094,26 +4094,50 @@
     }
   },
   "files": {
+    "R/synergy_benefit.R": {
+      "checksum": "3f9d8e2d4bc0bedbbbb16049f554763a"
+    },
+    "R/synergy_data.R": {
+      "checksum": "3190902391173e8b49f169b5581ab246"
+    },
+    "R/synergy_models.R": {
+      "checksum": "0c18aa8444c4675e97da8ef88e9f8938"
+    },
+    "R/synergy_bootstrap.R": {
+      "checksum": "4cf61bdf475176ac2bcfa5ceb698f909"
+    },
+    "R/synergy_gallery.R": {
+      "checksum": "bedf9a04313513dc31cf32e29a5d3328"
+    },
+    "R/synergy_studio.R": {
+      "checksum": "81743b09d17ad57ae9dd79538d1a416e"
+    },
     "app.R": {
-      "checksum": "1083452df86a20974c2fa6bf2a9a4313"
+      "checksum": "bea9bbeb00b7fa07273ec83146dac0c8"
     },
     "R/analysis.R": {
       "checksum": "65e4a516b7ae91cf44564404a78273ce"
     },
     "R/appearance.R": {
-      "checksum": "6c2ddc0fc63ec151749744fc5d09430b"
+      "checksum": "973e4b588166c21810d0ee637321f480"
     },
     "R/mtt_data_entry.R": {
-      "checksum": "14c6b26d0f58843f200859b3ef03093b"
+      "checksum": "e8d4276db07668616a1df481ffeb1091"
     },
     "R/mtt_shiny.R": {
-      "checksum": "5bf9890e930d9378021d83bfb14d9dd2"
+      "checksum": "6681ad1fac0dfa764f38f284b3ca9649"
     },
     "R/mtt_visualization_v4_LDJ_Prism.R": {
-      "checksum": "b3f9f595259aeb459fc520a0facd207d"
+      "checksum": "0e0d61fbb2018db7a7090b0997764598"
     },
     "R/pharmacology.R": {
-      "checksum": "e2e71f341558c2d93e74403df12f1862"
+      "checksum": "f76a5b8d9949f7a3d93a0fc24a5da55d"
+    },
+    "R/synergy_reference.R": {
+      "checksum": "343c21f8ce6e3a0d2a118ebf60ea0036"
+    },
+    "R/synergy_loewe_native.R": {
+      "checksum": "7d54ca2c79d2dcade116cb19f99da5ff"
     }
   },
   "users": null
