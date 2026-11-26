@@ -144,9 +144,12 @@ ldj_map_annotate <- function(plot, data, column, cfg, x = "a", y = "b",
   missing <- if (categorical) is.na(values) | values == "ND" else !is.finite(values)
   if (!show) label[!missing] <- ""
   if (cfg$visible == "no") label[missing] <- ""
-  if (cfg$coverage == "yes" && all(c("evaluated","total") %in% names(data))) {
+  if (all(c("evaluated","total") %in% names(data))) {
+    partial <- data$evaluated > 0 & data$evaluated < data$total
+    show_count <- partial | cfg$coverage == "yes"
     count <- paste0("n=", data$evaluated, "/", data$total)
-    label <- ifelse(nzchar(label), paste(label, count, sep = "\n"), count)
+    label[show_count] <- ifelse(nzchar(label[show_count]),
+      paste(label[show_count], count[show_count], sep = "\n"), count[show_count])
   }
   keep <- nzchar(label)
   if (!any(keep)) return(plot)
@@ -165,6 +168,20 @@ ldj_map_annotate <- function(plot, data, column, cfg, x = "a", y = "b",
     inherit.aes = FALSE, show.legend = FALSE, size = cfg$size, alpha = cfg$alpha,
     family = cfg$family, fontface = cfg$weight, hjust = cfg$horizontal, vjust = cfg$vertical) +
     ggplot2::scale_colour_identity()
+}
+
+ldj_numeric_points <- function(plot, data, column, x, y, config, units = "") {
+  if (config$visible != "yes" || !nrow(data)) return(plot)
+  data$.label <- ldj_map_number(data[[column]], config)
+  visible <- nzchar(data$.label)
+  data$.label[visible] <- paste0(data$.label[visible], units)
+  plot + ggplot2::geom_text(data = data[visible, , drop = FALSE],
+    ggplot2::aes(x = .data[[x]], y = .data[[y]], label = .label),
+    inherit.aes = FALSE, show.legend = FALSE,
+    colour = if (config$ink == "auto") "#253043" else config$ink, size = config$size,
+    alpha = config$alpha, family = config$family, fontface = config$weight,
+    hjust = config$horizontal, vjust = config$vertical, nudge_y = .18,
+    check_overlap = TRUE)
 }
 
 ldj_map_aggregate <- function(data, column, scope, selected = "") {
@@ -604,7 +621,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
     output$experimental_csv <- shiny::downloadHandler(filename = function() paste0("LDJ-", input$experimental_model, "-diagnostico.csv"),
       content = function(path) utils::write.csv(experimental(), path, row.names = FALSE, na = ""))
     output$class_experiment_ui <- shiny::renderUI({
-      shiny::req(identical(input$class_scope, "selected"))
+      shiny::req(identical(input$class_scope, "selected") || identical(input$map_scope, "selected"))
       experiments <- sort(unique(classified()$experiment_id))
       restored <- restored_class_experiment()
       shiny::selectInput(session$ns("class_experiment"), "Experimento", experiments,
@@ -1341,14 +1358,15 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
           },
           conditional_a = conditional("a", "b"),
           conditional_b = conditional("b", "a"),
-          forest = forest,
+          forest = if ("estimate" %in% names(forest$data))
+            ldj_numeric_points(forest, forest$data, "estimate", "estimate", "label", numeric_style, " pp") else forest,
           bubble = {
             points <- d
             points$direction <- factor(ifelse(!is.finite(d$score), "ND",
               ifelse(d$score > 0, "Positivo", ifelse(d$score < 0, "Negativo", "Cero"))),
               levels = c("Positivo", "Negativo", "Cero", "ND"))
             points$magnitude <- abs(points$score)
-            ggplot2::ggplot(points, ggplot2::aes(a, b)) +
+            bubble <- ggplot2::ggplot(points, ggplot2::aes(a, b)) +
               ggplot2::geom_point(data = points[is.finite(points$magnitude), ],
                 ggplot2::aes(size = magnitude, shape = direction, colour = direction), alpha = numeric_style$alpha, stroke = numeric_style$line) +
               ggplot2::geom_point(data = points[!is.finite(points$magnitude), ],
@@ -1364,6 +1382,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
                 y = paste("Dosis B", input$unit), colour = "Dirección", shape = "Dirección", size = "|Exceso| (pp)") + theme +
               ggplot2::theme(legend.position = "bottom", legend.box = "vertical",
                 legend.key.width = grid::unit(10, "pt"), panel.spacing = grid::unit(13, "pt"))
+            ldj_numeric_points(bubble, points, "score", "a", "b", numeric_style)
           },
           dumbbell = {
             if (!nrow(paired)) return(nd("Sin pares con controles y monoterapias correspondientes"))
@@ -1376,7 +1395,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
             tags <- paste(format_dose(paired$dose_A_M), format_dose(paired$dose_B_M),
               sep = " / ")
             tags <- paste(tags, vapply(as.character(paired$context), function(x) paste(strwrap(x, 24), collapse = "\n"), character(1)), sep = "\n")
-            ggplot2::ggplot(paired, ggplot2::aes(y = pair)) +
+            dumbbell <- ggplot2::ggplot(paired, ggplot2::aes(y = pair)) +
               ggplot2::geom_segment(ggplot2::aes(x = reference, xend = observed, yend = pair), colour = style$axis) +
               ggplot2::geom_point(ggplot2::aes(x = reference, shape = "Monoterapia"), colour = "#287FAE", size = 2) +
               ggplot2::geom_point(ggplot2::aes(x = observed, shape = "Combinación"), colour = "#6B1E58", size = 2) +
@@ -1386,16 +1405,18 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
                 switch(comparator, a = "Monoterapia A", b = "Monoterapia B", "Mejor monoterapia"), pair_limit),
                 x = "Inhibición (%)", y = paste("A / B", input$unit), shape = NULL) + theme +
               ggplot2::theme(legend.position = "bottom", axis.text.y = ggplot2::element_text(lineheight = .95))
+            ldj_numeric_points(dumbbell, paired, "observed", "observed", "pair", numeric_style, "%")
           },
           concordance = {
             if (!nrow(shared)) return(nd(comparison_subtitle))
             paired <- comparison_pairs()
-            ggplot2::ggplot(paired, ggplot2::aes(first, second)) +
+            agreement_plot <- ggplot2::ggplot(paired, ggplot2::aes(first, second)) +
               ggplot2::geom_abline(slope = 1, intercept = 0, linetype = 2, colour = style$axis) +
               ggplot2::geom_point(colour = style$point, size = style$size, alpha = style$alpha) +
               ggplot2::facet_wrap(~pair) +
               ggplot2::coord_equal() + ggplot2::labs(title = "Concordancia descriptiva",
                 subtitle = comparison_subtitle, x = "Primer modelo (pp)", y = "Segundo modelo (pp)") + theme
+            ldj_numeric_points(agreement_plot, paired, "second", "first", "second", numeric_style, " pp")
           },
           bland_altman = {
             if (!nrow(shared)) return(nd(comparison_subtitle))
@@ -1478,8 +1499,9 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
               ggplot2::labs(x = "Mono B (%)", y = NULL) + theme +
               ggplot2::scale_x_continuous(breaks = c(0, 100), limits = c(0, 100)) +
               ggplot2::theme(axis.text.y = ggplot2::element_blank(), axis.ticks.y = ggplot2::element_blank())
-            top <- top + ggplot2::scale_x_discrete(limits = levels(grid$a))
-            right <- right + ggplot2::scale_y_discrete(limits = levels(grid$b))
+            axis_order <- map_settings(cfg)$axes
+            top <- top + ggplot2::scale_x_discrete(limits = if (axis_order %in% c("a","both")) rev(levels(grid$a)) else levels(grid$a))
+            right <- right + ggplot2::scale_y_discrete(limits = if (axis_order %in% c("b","both")) rev(levels(grid$b)) else levels(grid$b))
             composite <- patchwork::wrap_plots(list(top, right, main), design = "A#\nCB",
               widths = c(3, pref("gallery_marginal_right", 1, c(.5, 3))),
               heights = c(pref("gallery_marginal_top", 1, c(.5, 3)), 3))
@@ -1652,7 +1674,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
             block$assay <- interaction(block[c("compound_A", "compound_B", "cell_line", "exposure_hours", "experiment_id")],
               drop = TRUE, sep = " · ")
             block$frontier <- ifelse(block$non_dominated, "Frontera", "Dominado")
-            ggplot2::ggplot(block, ggplot2::aes(activity_pct, viability_pct, shape = frontier, colour = frontier)) +
+            pareto_plot <- ggplot2::ggplot(block, ggplot2::aes(activity_pct, viability_pct, shape = frontier, colour = frontier)) +
               ggplot2::geom_point(size = 2.5) + ggplot2::facet_wrap(~assay, ncol = 2,
                 labeller = ggplot2::label_wrap_gen(width = 30)) +
               ggplot2::scale_shape_manual(values = c(Frontera = 17, Dominado = 1)) +
@@ -1660,6 +1682,8 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
               ggplot2::labs(title = "Frontera de Pareto", subtitle = "Maximizar inhibición y viabilidad in vitro",
                 x = "Inhibición (%)", y = "Viabilidad (%)", shape = NULL, colour = NULL) + theme +
               ggplot2::theme(legend.position = "bottom")
+            ldj_numeric_points(pareto_plot, block[block$non_dominated, , drop = FALSE], "viability_pct",
+              "activity_pct", "viability_pct", numeric_style, "%")
           })
       }
       if (input$template %in% names(gallery_presets)) {

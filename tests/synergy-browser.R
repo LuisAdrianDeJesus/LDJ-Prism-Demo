@@ -398,6 +398,22 @@ tryCatch({
     nrow(changed) == 90L, sum(changed$Loewe_status == "invalid_response") == 2L,
     sum(changed$Loewe_status == "outside_common_observed_domain") == 40L,
     sum(is.finite(changed$Loewe_excess)) == 48L, sum(changed$agreement_common) == 48L)
+  app$run_js("document.querySelector('#synergy-views a[data-value=Datos]').click();")
+  app$set_inputs(`synergy-scenario` = "didactic", timeout_ = 30000)
+  app$click("synergy-example", timeout_ = 60000)
+  app$run_js("document.querySelector(\"#synergy-views a[data-value='Clasificación']\").click();")
+  app$set_inputs(`synergy-model` = "Bliss", `synergy-unit` = "nM", `synergy-template` = "integral",
+    `synergy-panel_order` = "", `synergy-panel_export` = "C", `synergy-map_visible` = "yes",
+    `synergy-map_precision` = "0", `synergy-map_prefix` = "", timeout_ = 60000)
+  app$get_download("synergy-csv", filename = "test-artifacts/didactic-science.csv")
+  lesson <- read.csv("test-artifacts/didactic-science.csv")
+  stopifnot(nrow(lesson) == 108L, all(startsWith(lesson$experiment_id, "DID-")),
+    any(lesson$Bliss_excess > 0), any(lesson$Bliss_excess < 0),
+    all(lesson$observed == round(lesson$observed)))
+  app$get_download("synergy-svg", filename = "test-artifacts/didactic-inhibition.svg")
+  app$set_inputs(`synergy-panel_export` = "E", `synergy-map_precision` = "1", timeout_ = 30000)
+  app$get_download("synergy-svg", filename = "test-artifacts/didactic-excess.svg")
+  app$get_download("synergy-figure_json_out", filename = "test-artifacts/didactic.json")
   app$set_inputs(module="mtt",wait_=FALSE)
   app$wait_for_js("Boolean(document.querySelector('#plot img')?.naturalWidth)",timeout=60000)
   cat("Integrated Synergy classification, editable source and MTT navigation: PASS\n")
