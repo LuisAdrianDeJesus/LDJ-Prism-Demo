@@ -163,12 +163,50 @@ ldj_synergy_ui <- function(id) {
           shiny::textInput(ns("benefit_legend"), "Título de leyenda de beneficio", "Condición experimental"),
           shiny::fileInput(ns("figure_json"), "Restaurar composición JSON", accept = ".json"),
           shiny::downloadButton(ns("figure_json_out"), "Guardar composición JSON")),
-        shiny::plotOutput(ns("plot"),height="auto"),
+        shiny::tags$style(shiny::HTML("
+          .ldj-preview { overflow:auto; min-width:0; max-height:78vh; background:#eef1f5; padding:8px; }
+          .ldj-preview:fullscreen { max-height:none; width:100%; height:100%; }
+          .ldj-preview .shiny-plot-output { width:max-content !important; }
+          .ldj-preview img { display:block; max-width:none !important; height:auto !important; }
+          .ldj-table-scroll { width:100%; max-width:100%; overflow:auto; max-height:60vh; }
+          .ldj-preview-controls { display:flex; flex-wrap:wrap; align-items:center; gap:.7rem; }
+          .ldj-preview-controls .form-group { margin-bottom:0; }
+          .ldj-preview-controls select { max-width:100%; }
+        ")),
+        shiny::div(class="ldj-preview-controls",
+          shiny::selectInput(ns("preview_panel"), "Vista previa", c("Composición" = "", stats::setNames(LETTERS[1:12], LETTERS[1:12]))),
+          shiny::tags$label("Escala", shiny::tags$select(
+            onchange="this.closest('.ldj-preview-controls').nextElementSibling.dataset.zoom=this.value",
+            shiny::tags$option(value="fit", "Ajustar al ancho"),
+            shiny::tags$option(value="100", "Tamaño real · 100%"),
+            lapply(c(25, 50, 75, 125, 150, 175, 200), function(x) shiny::tags$option(value=x, paste0(x, "%"))))),
+          shiny::tags$button(type="button", class="btn btn-default",
+            onclick="const v=this.parentElement.nextElementSibling; if(document.fullscreenElement){document.exitFullscreen()}else if(v.requestFullscreen){v.requestFullscreen()}",
+            "Pantalla completa")),
+        shiny::div(class="ldj-preview", tabindex="0", role="region", `aria-label`="Vista previa desplazable",
+          `data-zoom`="fit", shiny::plotOutput(ns("plot"), height="auto")),
+        shiny::tags$script(shiny::HTML("
+          document.querySelectorAll('.ldj-preview').forEach(function(view){
+            if(view.dataset.ready) return;
+            view.dataset.ready='1';
+            function scale(){
+              const img=view.querySelector('img');
+              if(!img || !img.naturalWidth) return;
+              const zoom=view.dataset.zoom;
+              const width=zoom==='fit' ? Math.min(img.naturalWidth,Math.max(1,view.clientWidth-16)) :
+                img.naturalWidth*Number(zoom)/100;
+              img.style.width=width+'px';
+            }
+            new ResizeObserver(scale).observe(view);
+            new MutationObserver(scale).observe(view,{childList:true,subtree:true,attributes:true,attributeFilter:['data-zoom','src']});
+            view.addEventListener('load',scale,true);
+          });
+        ")),
         shiny::downloadButton(ns("csv"),"Resultados por experimento"),
         shiny::checkboxInput(ns("independence"),"Confirmo que los experimentos son independientes",FALSE),
         shiny::helpText("Contrastes unilaterales a dosis equivalentes, IC95% bilaterales y ajuste Holm por análisis. Se exige un mínimo de tres experimentos con variación entre ellos."),
         shiny::downloadButton(ns("inference_csv"),"Contrastes e incertidumbre CSV"),
-        shiny::tableOutput(ns("interaction_evidence")),
+        shiny::div(class = "ldj-table-scroll", tabindex = "0", shiny::tableOutput(ns("interaction_evidence"))),
         shiny::downloadButton(ns("svg"),"SVG"),
         shiny::downloadButton(ns("pdf"),"PDF"),
         shiny::downloadButton(ns("png"),"PNG 600 dpi"),
@@ -177,7 +215,7 @@ ldj_synergy_ui <- function(id) {
           shiny::selectInput(ns("experimental_model"), "Modelo en evaluación",
             c("Ninguno" = "", "Loewe continuo nativo" = "Loewe", "ZIP · SynergyFinder 3.20.0" = "ZIP")),
           shiny::helpText("Resultados provisionales por unidad biológica. Cobertura y exceso corresponden a las celdas evaluables."),
-          shiny::tableOutput(ns("experimental_summary")),
+          shiny::div(class = "ldj-table-scroll", tabindex = "0", shiny::tableOutput(ns("experimental_summary"))),
           shiny::plotOutput(ns("experimental_plot")),
           shiny::downloadButton(ns("experimental_csv"), "Descargar celdas y diagnósticos CSV"))),
       shiny::tabPanel("Incertidumbre",
@@ -187,9 +225,9 @@ ldj_synergy_ui <- function(id) {
         shiny::selectInput(ns("bootstrap_iterations"), "Iteraciones", c(1000, 5000, 10000)),
         shiny::numericInput(ns("bootstrap_seed"), "Semilla", 1, min = 0, max = 2147483647, step = 1),
         shiny::textOutput(ns("bootstrap_summary")),
-        shiny::tableOutput(ns("bootstrap_scores")),
+        shiny::div(class = "ldj-table-scroll", tabindex = "0", shiny::tableOutput(ns("bootstrap_scores"))),
         shiny::plotOutput(ns("bootstrap_plot")),
-        shiny::tableOutput(ns("bootstrap_loo")),
+        shiny::div(class = "ldj-table-scroll", tabindex = "0", shiny::tableOutput(ns("bootstrap_loo"))),
         shiny::downloadButton(ns("bootstrap_csv"), "Descargar incertidumbre CSV")),
       shiny::tabPanel("Beneficio farmacológico",
         shiny::helpText("Use una fila por par de dosis y contexto experimental. Los umbrales in vitro no establecen seguridad clínica."),
@@ -208,7 +246,7 @@ ldj_synergy_ui <- function(id) {
           c("Eficacia" = "activity_pct", "Viabilidad" = "viability_pct", "Concentración" = "dose")),
         shiny::textOutput(ns("benefit_status")),
         shiny::plotOutput(ns("benefit_plot"), height = "700px"),
-        shiny::tableOutput(ns("benefit_hits")),
+        shiny::div(class = "ldj-table-scroll", tabindex = "0", shiny::tableOutput(ns("benefit_hits"))),
         shiny::downloadButton(ns("benefit_csv"), "Descargar combinaciones elegibles CSV"))))
 
 }
@@ -329,7 +367,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
       d$b <- dose_factor(ldj_convert_concentration(d$dose_B_M, "M", input$unit))
       d$context <- interaction(d$experiment_id, d$biological_replicate_id, sep = " · ")
       dose_axes(ggplot2::ggplot(d, ggplot2::aes(a, b, fill = excess)) +
-        ggplot2::geom_tile() + ggplot2::facet_wrap(~context) +
+        ggplot2::geom_tile() + ggplot2::facet_wrap(~context, ncol = 2, labeller = ggplot2::label_wrap_gen(22)) +
         ggplot2::scale_fill_gradient2(low = "#287fae", mid = "#f5f2ed", high = "#c34e46",
           na.value = "#9ca3af") +
         ggplot2::labs(x = paste("Dosis A", input$unit), y = paste("Dosis B", input$unit), fill = "Exceso (pp)") +
@@ -865,13 +903,8 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
       heat_cfg <- heat_settings()
       facet_columns <- if (heat_cfg$class_columns > 0) heat_cfg$class_columns else
         min(3L, max(1L, nlevels(class_data$context)))
-      available_width <- session$clientData$output_plot_width
-      if (is.null(available_width) || !is.finite(available_width) || available_width < 1) available_width <- 800
-      facet_ticks <- max(2L, min(input$dose_ticks,
-        floor(available_width / (max(1L, input$figure_columns) * facet_columns * 52))))
-      facet_breaks <- function(labels) {
-        labels[unique(round(seq(1, length(labels), length.out = min(length(labels), facet_ticks))))]
-      }
+      facet_breaks <- function(labels) thin_doses(labels,
+        min(input$dose_ticks, if (facet_columns > 1L || max(nchar(labels), 0) > 6L) 3L else 5L))
       map <- map + ggplot2::facet_wrap(~context, ncol = facet_columns) +
         ggplot2::scale_x_discrete(breaks = facet_breaks) +
         ggplot2::scale_y_discrete(breaks = function(labels) thin_doses(labels,
@@ -899,13 +932,24 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         p <- ggplot2::ggplot(grid,ggplot2::aes(a,b,fill=value))+ggplot2::geom_tile()+
           ggplot2::labs(title=title,x=paste("A",input$unit),y=paste("B",input$unit),fill=NULL)+theme
         p <- dose_axes(p)
+        p <- p + if (diverging) {
+          ggplot2::scale_fill_gradient2(low = "#287FAE", mid = "#F5F2ED", high = "#6B1E58",
+            midpoint = 0, na.value = "#9CA3AF")
+        } else {
+          ggplot2::scale_fill_gradient(low = "#F5F2ED", high = ldj_palette_catalog()[[state$palette]]$colors[1],
+            na.value = "#9CA3AF")
+        }
         if (isTRUE(input$gallery_values) || anyNA(grid$value)) {
           grid$label <- ifelse(is.na(grid$value), "ND", if (isTRUE(input$gallery_values)) sprintf("%.1f", grid$value) else "")
-          p <- p + ggplot2::geom_text(data = grid, ggplot2::aes(label = label), size = 2.6, colour = style$text)
+          # Use the trained fill scale, including its missing-value colour.
+          fill <- ggplot2::ggplot_build(p)$plot$scales$get_scales("fill")$map(grid$value)
+          rgb <- grDevices::col2rgb(fill) / 255
+          light <- ifelse(rgb <= .04045, rgb / 12.92, ((rgb + .055) / 1.055)^2.4)
+          grid$ink <- ifelse(drop(c(.2126, .7152, .0722) %*% light) > .179, "#000000", "#FFFFFF")
+          p <- p + ggplot2::geom_text(data = grid, ggplot2::aes(label = label, colour = ink), size = 2.6) +
+            ggplot2::scale_colour_identity()
         }
-        if(diverging) p+ggplot2::scale_fill_gradient2(low="#287FAE",mid="#F5F2ED",high="#6B1E58",midpoint=0,na.value="#9CA3AF")
-        else p+ggplot2::scale_fill_gradient(low="#f5f2ed",high=ldj_palette_catalog()[[state$palette]]$colors[1],
-          na.value="#9ca3af")
+        p
       }
       count <- ggplot2::ggplot(d,ggplot2::aes(category))+ggplot2::geom_bar(fill=style$axis)+
         ggplot2::labs(title="Conteos por categoría",x=NULL,y="Pares por unidad")+theme+
@@ -997,7 +1041,8 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
             ggplot2::geom_line(linewidth = .5, na.rm = TRUE) + ggplot2::geom_point(size = 1.4, na.rm = TRUE) +
             ggplot2::scale_colour_manual(values = colours) + ggplot2::scale_shape_manual(values = shapes) +
             ggplot2::scale_x_discrete(breaks = function(x) thin_doses(x, 2)) +
-            ggplot2::facet_wrap(~experiment_id) +
+            ggplot2::facet_wrap(~experiment_id, ncol = min(2L, length(unique(valid$experiment_id))),
+              labeller = ggplot2::label_wrap_gen(22)) +
             ggplot2::labs(x = paste(if (axis == "a") "Dosis A" else "Dosis B", input$unit),
               y = "Inhibición (%)", colour = if (fixed == "a") "Dosis A fija" else "Dosis B fija",
               shape = if (fixed == "a") "Dosis A fija" else "Dosis B fija",
@@ -1044,13 +1089,14 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
               ggplot2::scale_size_area(max_size = 4, n.breaks = 3) +
               ggplot2::scale_shape_manual(values = c(Positivo = 17, Negativo = 25, Cero = 1, ND = 4)) +
               ggplot2::scale_colour_manual(values = c(Positivo = "#6B1E58", Negativo = "#287FAE", Cero = "#59606A", ND = "#59606A")) +
-              ggplot2::facet_wrap(~context) +
-              ggplot2::scale_x_discrete(breaks = function(x) thin_doses(x, 2)) +
+              ggplot2::facet_wrap(~context, ncol = 2, labeller = ggplot2::label_wrap_gen(22)) +
+              ggplot2::scale_x_discrete(breaks = function(x) thin_doses(x, 2),
+                guide = ggplot2::guide_axis(angle = 35), expand = ggplot2::expansion(add = .55)) +
               ggplot2::scale_y_discrete(breaks = function(x) thin_doses(x, 4)) +
               ggplot2::labs(title = paste("Interacción ·", input$model), x = paste("Dosis A", input$unit),
                 y = paste("Dosis B", input$unit), colour = "Dirección", shape = "Dirección", size = "|Exceso| (pp)") + theme +
               ggplot2::theme(legend.position = "bottom", legend.box = "vertical",
-                legend.key.width = grid::unit(10, "pt"))
+                legend.key.width = grid::unit(10, "pt"), panel.spacing = grid::unit(13, "pt"))
           },
           dumbbell = {
             if (!nrow(paired)) return(nd("Sin pares con controles y monoterapias correspondientes"))
@@ -1061,7 +1107,8 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
             paired$pair <- rev(seq_len(nrow(paired)))
             format_dose <- function(x) format(signif(ldj_convert_concentration(x, "M", input$unit), 3), trim = TRUE)
             tags <- paste(format_dose(paired$dose_A_M), format_dose(paired$dose_B_M),
-              paired$context, sep = " / ")
+              sep = " / ")
+            tags <- paste(tags, vapply(as.character(paired$context), function(x) paste(strwrap(x, 24), collapse = "\n"), character(1)), sep = "\n")
             ggplot2::ggplot(paired, ggplot2::aes(y = pair)) +
               ggplot2::geom_segment(ggplot2::aes(x = reference, xend = observed, yend = pair), colour = style$axis) +
               ggplot2::geom_point(ggplot2::aes(x = reference, shape = "Monoterapia"), colour = "#287FAE", size = 2) +
@@ -1071,7 +1118,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
               ggplot2::labs(title = "Comparación pareada descriptiva", subtitle = sprintf("%s · hasta %d diferencias absolutas mayores",
                 switch(comparator, a = "Monoterapia A", b = "Monoterapia B", "Mejor monoterapia"), pair_limit),
                 x = "Inhibición (%)", y = paste("A / B", input$unit), shape = NULL) + theme +
-              ggplot2::theme(legend.position = "bottom", axis.text.y = ggplot2::element_text(size = 7))
+              ggplot2::theme(legend.position = "bottom", axis.text.y = ggplot2::element_text(lineheight = .95))
           },
           concordance = {
             if (!nrow(shared)) return(nd(comparison_subtitle))
@@ -1197,15 +1244,17 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
             }), use.names = FALSE)
             labels <- ticks[labels, , drop = FALSE]
             labels$label_v <- labels$v + ifelse(labels$axis == "Z", 1, -1) * .045 * diff(range(mesh$points$v))
-            labels$label_u <- labels$u + ifelse(labels$axis == "Z", -.055, 0) * diff(range(mesh$points$u))
+            labels$label_u <- labels$u + ifelse(labels$axis == "Z", -.10,
+              ifelse(labels$axis == "A", .045, -.045)) * diff(range(mesh$points$u))
             fill_scale <- if (field == "score")
               ggplot2::scale_fill_gradient2(low = "#287FAE", mid = "#F5F2ED", high = "#6B1E58")
               else ggplot2::scale_fill_gradient(low = "#F5F2ED", high = ldj_series_colors(state, "Inhibición")[[1L]])
             ggplot2::ggplot() +
-              ggplot2::geom_path(data = mesh$zero, ggplot2::aes(u, v), colour = style$axis, linetype = 2) +
               ggplot2::geom_polygon(data = mesh$faces, ggplot2::aes(u, v, group = face, fill = fill),
                 colour = style$axis, linewidth = pref("gallery_surface_mesh", .25, c(.05, 2)),
                 alpha = pref("gallery_surface_alpha", .75, c(.15, 1))) +
+              ggplot2::geom_path(data = mesh$zero, ggplot2::aes(u, v), colour = "#536475",
+                linewidth = .5, linetype = 3) +
               ggplot2::geom_point(data = mesh$points, ggplot2::aes(u, v), colour = style$axis,
                 size = pref("gallery_surface_points", 1, c(.3, 5))) +
               ggplot2::geom_path(data = ticks, ggplot2::aes(u, v, group = axis), colour = style$axis) +
@@ -1213,7 +1262,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
                 colour = style$text, size = pref("gallery_surface_labels", 3.2, c(2, 6)),
                 vjust = .5, check_overlap = TRUE) +
               fill_scale +
-              ggplot2::coord_equal() + ggplot2::labs(title = "Superficie de interacción",
+              ggplot2::coord_equal(clip = "off", expand = TRUE) + ggplot2::labs(title = "Superficie de interacción",
                 subtitle = paste0("A: ", grid$compound_A[1L], " / B: ", grid$compound_B[1L],
                   " (", input$unit, ") · ", as.character(grid$context[1L])),
                 fill = switch(field, observed = "Observada (%)", expected = "Esperada (%)", "Exceso (pp)")) + theme +
@@ -1269,7 +1318,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
                 breaks = c(-input$cutoff, 0, input$cutoff), colour = style$axis, na.rm = TRUE) +
               ggplot2::geom_point(data = d[is.finite(d$score), , drop = FALSE], colour = style$axis,
                 shape = 3, size = 1) +
-              ggplot2::facet_wrap(~context) +
+              ggplot2::facet_wrap(~context, ncol = 2, labeller = ggplot2::label_wrap_gen(22)) +
               ggplot2::scale_x_continuous(breaks = thin_doses(seq_along(x), 3L),
                 labels = function(breaks) x[breaks],
                 guide = ggplot2::guide_axis(check.overlap = TRUE, angle = 35)) +
@@ -1476,7 +1525,8 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
       shiny::validate(shiny::need(input$panel_export %in% names(panels), "Seleccione un panel visible."))
       panels[[input$panel_export]]
     }
-    export_dimensions <- function(single = nzchar(input$panel_export)) {
+    export_dimensions <- function(single = nzchar(input$panel_export), panel_id = input$panel_export,
+                                  preview = FALSE) {
       n <- if (single) 1L else length(figure_panels())
       reference <- ldj_synergy_figure_dimensions(n, input$figure_columns)
       gallery <- input$template %in% c("landscape", "concordance", "reproducibility", "optimization", "custom")
@@ -1494,7 +1544,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         reference <- c(width = max(8, 5.6 * cols), height = max(6, 4.2 * rows + .4))
       }
       panels <- figure_panels()
-      if (single) panels <- panels[input$panel_export]
+      if (single) panels <- panels[panel_id]
       has_minimum <- vapply(panels, function(panel) {
         !is.null(panel$theme$panel.widths) || !is.null(panel$theme$panel.heights)
       }, logical(1))
@@ -1512,7 +1562,38 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         rows <- ceiling(n / cols)
         minimum <- apply(room, 1L, max) * c(cols, rows)
       }
-      if (input$size_preset == "custom") {
+      measured <- lapply(panels, function(panel) {
+        if (inherits(panel, "patchwork")) return(c(width = 4.3, height = 3.2))
+        built <- ggplot2::ggplot_build(panel)
+        gt <- ggplot2::ggplot_gtable(built)
+        slots <- built$layout$layout
+        absolute <- function(x, convert) convert(sum(x), "in", valueOnly = TRUE)
+        draw_width <- if (is.null(panel$theme$panel.widths)) 1.15 * max(slots$COL) else 0
+        draw_height <- if (is.null(panel$theme$panel.heights)) .85 * max(slots$ROW) else 0
+        c(width = draw_width + absolute(gt$widths, grid::convertWidth),
+          height = draw_height + absolute(gt$heights, grid::convertHeight))
+      })
+      measured <- do.call(rbind, measured)
+      if (!single && identical(input$template, "custom") && nzchar(trimws(input$gallery_layout %||% ""))) {
+        layout <- strsplit(ldj_synergy_gallery_design(input$gallery_layout, n), "\n", fixed = TRUE)[[1L]]
+        cells <- do.call(rbind, strsplit(layout, "", fixed = TRUE))
+        shares <- function(value, count) {
+          w <- ldj_synergy_gallery_weights(value %||% "", count)
+          if (is.null(w)) w <- rep(1, count)
+          w / sum(w)
+        }
+        xs <- shares(input$gallery_widths, ncol(cells))
+        ys <- shares(input$gallery_heights, nrow(cells))
+        for (i in seq_len(n)) {
+          pos <- which(cells == LETTERS[i], arr.ind = TRUE)
+          measured[i, ] <- measured[i, ] / c(sum(xs[unique(pos[,2])]), sum(ys[unique(pos[,1])]))
+        }
+      } else if (!single) {
+        cols <- min(n, input$figure_columns)
+        measured <- sweep(measured, 2L, c(cols, ceiling(n / cols)), "*")
+      }
+      minimum <- pmax(minimum, apply(measured, 2L, max) + c(.20, .45))
+      if (!preview && input$size_preset == "custom") {
         inches <- c("in" = 1, cm = 1 / 2.54, mm = 1 / 25.4)
         size <- c(width = input$size_width, height = input$size_height) * inches[[input$size_units]]
         shiny::validate(shiny::need(all(is.finite(size) & size > 0 & size <= 30),
@@ -1522,7 +1603,8 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
             "Aumente el lienzo o reduzca las dimensiones mínimas de las facetas."))
         return(size)
       }
-      target <- switch(input$size_preset, one = 3.5, two = 7, page = 8.3, reference[["width"]])
+      target <- if (preview) reference[["width"]] else
+        switch(input$size_preset, one = 3.5, two = 7, page = 8.3, reference[["width"]])
       size <- pmax(reference * (target / reference[["width"]]), minimum)
       shiny::validate(shiny::need(all(size <= 30),
         "Las dimensiones mínimas requieren un lienzo mayor a 30 pulgadas."))
@@ -1535,12 +1617,19 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
       note <- if (any(size < standard * 0.75)) " · Revise legibilidad: tamaño reducido para esta distribución." else ""
       sprintf("%.2f × %.2f in%s", size[["width"]], size[["height"]], note)
     })
-    output$plot <- shiny::renderPlot(figure(), res = 110, height = function() {
-      size <- export_dimensions(single = FALSE)
-      width <- session$clientData$output_plot_width
-      if (is.null(width) || width <= 0) width <- 800
-      max(350, ceiling(width * size[["height"]] / size[["width"]]))
+    preview_panel <- shiny::reactive({
+      selected <- input$preview_panel %||% ""
+      if (selected %in% names(figure_panels())) selected else ""
     })
+    preview_pixels <- shiny::reactive({
+      selected <- preview_panel()
+      ceiling(96 * export_dimensions(single = nzchar(selected), panel_id = selected, preview = TRUE))
+    })
+    output$plot <- shiny::renderPlot({
+      selected <- preview_panel()
+      if (nzchar(selected)) figure_panels()[[selected]] else figure()
+    }, res = 96, width = function() preview_pixels()[["width"]],
+      height = function() preview_pixels()[["height"]])
     evidence <- shiny::reactive({
       d <- ldj_synergy_inference(classified(), isTRUE(input$independence))
       d <- d[d$contrast %in% c("Bliss_excess", "superior_to_both"), , drop = FALSE]
