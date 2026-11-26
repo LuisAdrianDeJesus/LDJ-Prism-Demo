@@ -148,7 +148,9 @@ tryCatch({
     app$wait_for_js("(() => {const v=document.querySelector('.ldj-preview');const i=v.querySelector('img');return i && Math.abs(i.width-i.naturalWidth*2)<2 && (i.width <= v.clientWidth || v.scrollWidth > v.clientWidth)})()", timeout=30000)
     app$run_js("document.querySelector('.ldj-preview').dataset.zoom = 'fit'")
     app$wait_for_js("(() => {const v=document.querySelector('.ldj-preview');const i=v.querySelector('img');return i && i.width <= v.clientWidth})()", timeout=30000)
-    app$get_screenshot(sprintf("test-artifacts/preview-%dx%d.png", viewport[1], viewport[2]))
+    app$run_js("document.querySelector('.ldj-preview').scrollIntoView({block:'center'})")
+    shot <- session$Page$captureScreenshot(format = "png", captureBeyondViewport = FALSE)
+    writeBin(jsonlite::base64_dec(shot$data), sprintf("test-artifacts/preview-%dx%d.png", viewport[1], viewport[2]))
   }
   session$Emulation$clearDeviceMetricsOverride()
   app$get_download("synergy-svg", filename = "test-artifacts/preview-export-after.svg")

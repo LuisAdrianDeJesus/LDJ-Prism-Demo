@@ -64,6 +64,8 @@ jobs:
         run: |
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           Rscript ../audit/tests/synergy-browser.R
+      - name: Exercise long labels and dense synthetic matrices
+        run: Rscript ../audit/tests/editorial-stress.R
       - uses: actions/download-artifact@v4
         with:
           name: public-chromium-regression

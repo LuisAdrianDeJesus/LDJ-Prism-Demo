@@ -168,6 +168,7 @@ ldj_synergy_ui <- function(id) {
           .ldj-preview:fullscreen { max-height:none; width:100%; height:100%; }
           .ldj-preview .shiny-plot-output { width:max-content !important; }
           .ldj-preview img { display:block; max-width:none !important; height:auto !important; }
+          .ldj-table-scroll { width:100%; max-width:100%; overflow:auto; max-height:60vh; }
           .ldj-preview-controls { display:flex; flex-wrap:wrap; align-items:center; gap:.7rem; }
           .ldj-preview-controls .form-group { margin-bottom:0; }
           .ldj-preview-controls select { max-width:100%; }
@@ -205,7 +206,7 @@ ldj_synergy_ui <- function(id) {
         shiny::checkboxInput(ns("independence"),"Confirmo que los experimentos son independientes",FALSE),
         shiny::helpText("Contrastes unilaterales a dosis equivalentes, IC95% bilaterales y ajuste Holm por análisis. Se exige un mínimo de tres experimentos con variación entre ellos."),
         shiny::downloadButton(ns("inference_csv"),"Contrastes e incertidumbre CSV"),
-        shiny::tableOutput(ns("interaction_evidence")),
+        shiny::div(class = "ldj-table-scroll", tabindex = "0", shiny::tableOutput(ns("interaction_evidence"))),
         shiny::downloadButton(ns("svg"),"SVG"),
         shiny::downloadButton(ns("pdf"),"PDF"),
         shiny::downloadButton(ns("png"),"PNG 600 dpi"),
@@ -214,7 +215,7 @@ ldj_synergy_ui <- function(id) {
           shiny::selectInput(ns("experimental_model"), "Modelo en evaluación",
             c("Ninguno" = "", "Loewe continuo nativo" = "Loewe", "ZIP · SynergyFinder 3.20.0" = "ZIP")),
           shiny::helpText("Resultados provisionales por unidad biológica. Cobertura y exceso corresponden a las celdas evaluables."),
-          shiny::tableOutput(ns("experimental_summary")),
+          shiny::div(class = "ldj-table-scroll", tabindex = "0", shiny::tableOutput(ns("experimental_summary"))),
           shiny::plotOutput(ns("experimental_plot")),
           shiny::downloadButton(ns("experimental_csv"), "Descargar celdas y diagnósticos CSV"))),
       shiny::tabPanel("Incertidumbre",
@@ -224,9 +225,9 @@ ldj_synergy_ui <- function(id) {
         shiny::selectInput(ns("bootstrap_iterations"), "Iteraciones", c(1000, 5000, 10000)),
         shiny::numericInput(ns("bootstrap_seed"), "Semilla", 1, min = 0, max = 2147483647, step = 1),
         shiny::textOutput(ns("bootstrap_summary")),
-        shiny::tableOutput(ns("bootstrap_scores")),
+        shiny::div(class = "ldj-table-scroll", tabindex = "0", shiny::tableOutput(ns("bootstrap_scores"))),
         shiny::plotOutput(ns("bootstrap_plot")),
-        shiny::tableOutput(ns("bootstrap_loo")),
+        shiny::div(class = "ldj-table-scroll", tabindex = "0", shiny::tableOutput(ns("bootstrap_loo"))),
         shiny::downloadButton(ns("bootstrap_csv"), "Descargar incertidumbre CSV")),
       shiny::tabPanel("Beneficio farmacológico",
         shiny::helpText("Use una fila por par de dosis y contexto experimental. Los umbrales in vitro no establecen seguridad clínica."),
@@ -245,7 +246,7 @@ ldj_synergy_ui <- function(id) {
           c("Eficacia" = "activity_pct", "Viabilidad" = "viability_pct", "Concentración" = "dose")),
         shiny::textOutput(ns("benefit_status")),
         shiny::plotOutput(ns("benefit_plot"), height = "700px"),
-        shiny::tableOutput(ns("benefit_hits")),
+        shiny::div(class = "ldj-table-scroll", tabindex = "0", shiny::tableOutput(ns("benefit_hits"))),
         shiny::downloadButton(ns("benefit_csv"), "Descargar combinaciones elegibles CSV"))))
 
 }
