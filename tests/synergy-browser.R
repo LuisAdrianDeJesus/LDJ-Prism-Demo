@@ -324,6 +324,21 @@ tryCatch({
   app$get_download("synergy-svg", filename = keyed)
   stopifnot(grepl("Instancia segunda", svg_text(keyed), fixed = TRUE),
     !grepl("Instancia primera", svg_text(keyed), fixed = TRUE))
+  app$set_inputs(`synergy-gallery_sequence` = "observed@integer,observed@decimal",
+    `synergy-panel_export` = "A", `synergy-map_visible` = "yes", `synergy-map_save_instance` = TRUE,
+    `synergy-edit_panel` = "A", `synergy-map_precision` = "0", `synergy-map_prefix` = "INT:",
+    timeout_ = 30000)
+  app$run_js("document.querySelector('#synergy-save_panel').click()")
+  app$set_inputs(`synergy-edit_panel` = "B", `synergy-map_precision` = "2",
+    `synergy-map_prefix` = "DEC:", `synergy-map_palette` = "viridis", timeout_ = 30000)
+  app$run_js("document.querySelector('#synergy-save_panel').click()")
+  for (panel in c("A","B")) {
+    app$set_inputs(`synergy-panel_export` = panel, timeout_ = 30000)
+    output <- paste0("test-artifacts/numeric-", panel, ".svg")
+    app$get_download("synergy-svg", filename = output)
+    stopifnot(grepl(if (panel == "A") "INT:" else "DEC:", svg_text(output), fixed = TRUE))
+  }
+  app$get_download("synergy-figure_json_out", filename = "test-artifacts/numeric-instances.json")
   app$set_inputs(`synergy-model` = "Loewe", `synergy-template` = "landscape",
     `synergy-panel_export` = "", timeout_ = 30000)
   file <- "test-artifacts/Loewe-main.csv"
