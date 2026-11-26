@@ -1,7 +1,8 @@
 # Figure preferences only. No numeric analysis or source table is modified.
 ldj_map_fields <- function() list(
-  visible = c("Valores" = "legacy", "Mostrar" = "yes", "Ocultar" = "no"),
-  precision = c("Precisión" = "auto", stats::setNames(as.character(0:4), 0:4)),
+  visible = c("Mostrar números en mapas" = "yes", "Ocultar" = "no", "Heredado" = "legacy"),
+  point_labels = c("Anotaciones fuera de mapas" = "no", "Mostrar" = "yes"),
+  precision = c("Decimales" = "0", stats::setNames(as.character(1:4), 1:4), "Automático" = "auto"),
   notation = c("Notación" = "fixed", "Significativas" = "significant", "Científica" = "scientific"),
   small = c("Valores pequeños" = "expand", "Marcar redondeo" = "mark"),
   sign = c("Signo positivo" = "no", "Sí" = "yes"),
@@ -22,7 +23,7 @@ ldj_map_fields <- function() list(
   axes = c("Orden de ejes" = "normal", "Invertir A" = "a", "Invertir B" = "b", "Invertir ambos" = "both"),
   cells = c("Forma de celdas" = "inherit", "Cuadradas" = "square", "Rectangulares" = "rectangle"),
   gap = list("Separación de celdas", 0, 0, .4),
-  border = list("Borde (HEX o vacío)", ""),
+  border = list("Borde (HEX o vacío)", "#E5E7EB"),
   line = list("Grosor de borde (mm)", .2, 0, 2),
   palette = c("Paleta" = "editorial", "Viridis" = "viridis", "Índigo / coral" = "indigo", "Personalizada" = "custom"),
   low = list("Color inicial (HEX)", "#287FAE"), mid = list("Color central (HEX)", "#F5F2ED"),
@@ -67,7 +68,7 @@ ldj_map_config <- function(incoming) {
 
 ldj_map_controls <- function(ns) {
   groups <- list("Datos representados" = c("scope", "coverage"), "Ejes y graduaciones" = "axes",
-    "Valores y anotaciones" = c("visible","precision","notation","small","sign","size","family","weight",
+    "Valores y anotaciones" = c("visible","point_labels","precision","notation","small","sign","size","family","weight",
       "alpha","ink","horizontal","vertical","prefix","suffix","nd","decimal","threshold"),
     "Celdas y escalas cromáticas" = c("cells","gap","border","line","palette","low","mid","high",
       "missing","midpoint","minimum","maximum","symmetric","shared","breaks"),
@@ -138,7 +139,8 @@ ldj_map_annotate <- function(plot, data, column, cfg, x = "a", y = "b",
                              diverging = FALSE, categorical = FALSE, legacy = FALSE,
                              default_digits = 1L) {
   values <- data[[column]]
-  show <- cfg$visible == "yes" || (cfg$visible == "legacy" && legacy)
+  show <- if (categorical) cfg$point_labels == "yes" else
+    cfg$visible == "yes" || (cfg$visible == "legacy" && legacy)
   label <- if (categorical) ifelse(is.na(values) | values == "ND", cfg$nd, as.character(values)) else
     ldj_map_number(values, cfg, if (cfg$precision == "auto") default_digits else if (diverging) 1L else 0L)
   missing <- if (categorical) is.na(values) | values == "ND" else !is.finite(values)
@@ -163,15 +165,17 @@ ldj_map_annotate <- function(plot, data, column, cfg, x = "a", y = "b",
     linear <- ifelse(rgb <= .04045, rgb / 12.92, ((rgb + .055) / 1.055)^2.4)
     data$.ink <- ifelse(drop(c(.2126,.7152,.0722) %*% linear) > .179, "#000000", "#FFFFFF")
   }
+  density <- max(length(unique(data[[x]])), length(unique(data[[y]])), 7L)
+  size <- min(cfg$size, 3.1 * 7 / density, 15 / max(nchar(label[keep], type = "width"), 1))
   plot + ggplot2::geom_text(data = data[keep, , drop = FALSE],
     ggplot2::aes(x = .data[[x]], y = .data[[y]], label = .label, colour = .ink),
-    inherit.aes = FALSE, show.legend = FALSE, size = cfg$size, alpha = cfg$alpha,
+    inherit.aes = FALSE, show.legend = FALSE, size = size, alpha = cfg$alpha,
     family = cfg$family, fontface = cfg$weight, hjust = cfg$horizontal, vjust = cfg$vertical) +
     ggplot2::scale_colour_identity()
 }
 
 ldj_numeric_points <- function(plot, data, column, x, y, config, units = "") {
-  if (config$visible != "yes" || !nrow(data)) return(plot)
+  if (config$point_labels != "yes" || !nrow(data)) return(plot)
   data$.label <- ldj_map_number(data[[column]], config)
   visible <- nzchar(data$.label)
   data$.label[visible] <- paste0(data$.label[visible], units)
@@ -235,7 +239,8 @@ ldj_synergy_dose_labels <- function(doses, digits = 3L, notation = "significant"
     integer = formatC(doses, format = "f", digits = precision - 1L),
     decimal = formatC(doses, format = "f", digits = precision),
     scientific = formatC(doses, format = "e", digits = precision - 1L),
-    significant = format(signif(doses, precision), trim = TRUE, scientific = NA, digits = precision))
+    significant = format(signif(doses, precision), trim = TRUE,
+      scientific = if (all(doses == round(doses))) FALSE else NA, digits = precision))
   labels <- encode(digits)
   compact <- function(x) sub("\\.$", "", sub("(\\.[0-9]*?)0+$", "\\1", trimws(x), perl = TRUE))
   distinct <- !duplicated(doses)
@@ -279,12 +284,12 @@ ldj_synergy_demo <- function(size=7L,scenario="generic") {
 
 ldj_synergy_ui <- function(id) {
   ns <- shiny::NS(id)
-  shiny::tagList(shiny::h3("Synergy Studio"),
+  shiny::div(class = "ldj-synergy", shiny::h3("Synergy Studio"),
     shiny::textOutput(ns("provenance")),
     shiny::tabsetPanel(id=ns("views"),selected="Clasificación",
       shiny::tabPanel("Datos",
         shiny::numericInput(ns("size"),"Tamaño de la matriz, incluido cero",7,min=5,max=12,step=1),
-        shiny::selectInput(ns("scenario"),"Escenario simulado",c("A"="generic","B"="second","Didáctica · 7 dosis en nM"="didactic")),
+        shiny::selectInput(ns("scenario"),"Escenario simulado",c("Didáctica · 7 dosis en nM"="didactic","A"="generic","B"="second")),
         shiny::actionButton(ns("example"),"Restaurar simulación"),
         shiny::fileInput(ns("file"),"Tabla larga CSV, TSV o Excel",accept=c(".csv",".tsv",".xls",".xlsx")),
         shiny::selectInput(ns("sheet"),"Hoja",choices=NULL),
@@ -295,14 +300,14 @@ ldj_synergy_ui <- function(id) {
           "Clasificación y eficacia · 6 paneles"="class","Integral · 12 paneles"="integral", "Beneficio · 6 paneles"="benefit",
           "Synergy Landscape"="landscape", "Model Concordance"="concordance",
           "Experimental Reproducibility"="reproducibility", "Dose Optimization"="optimization",
-          "Composición personalizada"="custom")),
+          "Composición personalizada"="custom"), selected = "class"),
         shiny::textInput(ns("title"),"Título de figura",""),
         shiny::selectInput(ns("model"),"Referencia descriptiva",c("Bliss","HSA","Loewe")),
         shiny::selectInput(ns("agreement_models"), "Concordancia descriptiva",
           c("HSA frente a Bliss" = "HSA/Bliss", "HSA frente a Loewe" = "HSA/Loewe",
             "Bliss frente a Loewe" = "Bliss/Loewe", "Tres modelos · dominio común" = "HSA/Bliss/Loewe")),
         shiny::numericInput(ns("cutoff"),"Umbral descriptivo en puntos porcentuales",10,min=.1,max=100),
-        shiny::selectInput(ns("unit"),"Unidad de presentación",c("uM","nM","mM","M")),
+        shiny::selectInput(ns("unit"),"Unidad de presentación",c("nM","uM","mM","M")),
         shiny::helpText("La clasificación describe un exceso frente a la referencia. Loewe nativo es descriptivo. Su inferencia permanece ND. ZIP permanece experimental."),
         shiny::tags$details(shiny::tags$summary("Figure Studio"),
           shiny::conditionalPanel("input.template === 'custom'", ns = ns,
@@ -337,8 +342,10 @@ ldj_synergy_ui <- function(id) {
           shiny::numericInput(ns("gallery_surface_phi"), "Superficie · elevación (°)", 28, min = 5, max = 85),
           shiny::numericInput(ns("gallery_density_adjust"), "Densidades · multiplicador del ancho de banda", 1, min = .2, max = 4, step = .1),
           shiny::uiOutput(ns("gallery_context_ui")),
+          shiny::selectInput(ns("observed_field"), "Mapa de inhibición",
+            c("Observada" = "observed", "Esperada según la referencia" = "expected")),
           shiny::selectInput(ns("gallery_marginal_field"), "Mapa marginal · variable",
-            c("Inhibición observada (%)" = "observed", "Exceso (pp)" = "score")),
+            c("Inhibición observada (%)" = "observed", "Respuesta esperada (%)" = "expected", "Exceso (pp)" = "score")),
           shiny::numericInput(ns("gallery_isobole_window"), "Isobola · tolerancia de observaciones (pp)", 10, min = 0, max = 50),
           shiny::numericInput(ns("gallery_isobole_effect"), "Efecto de la isobola (%)", 50, min = 1, max = 99),
           shiny::checkboxInput(ns("gallery_values"), "Mostrar valores en el modo heredado", FALSE),
@@ -370,8 +377,8 @@ ldj_synergy_ui <- function(id) {
           shiny::numericInput(ns("class_columns"), "Columnas de la clasificación (0 = automático)", 0, min = 0, max = 8, step = 1),
           shiny::numericInput(ns("class_spacing"), "Separación de facetas (pt)", 5, min = 0, max = 25, step = 1),
           shiny::textInput(ns("panel_order"), "Paneles visibles en orden (letras separadas por comas)", ""),
-          shiny::selectInput(ns("panel_export"), "Exportar", c("Figura completa" = "", stats::setNames(LETTERS[1:12], LETTERS[1:12]))),
-          shiny::selectInput(ns("edit_panel"), "Panel para editar", LETTERS[1:12]),
+          shiny::selectInput(ns("panel_export"), "Exportar", c("Figura completa" = "")),
+          shiny::selectInput(ns("edit_panel"), "Panel para editar", choices = NULL),
           shiny::textInput(ns("panel_title"), "Título del panel", ""),
           shiny::textInput(ns("panel_subtitle"), "Subtítulo", ""),
           shiny::textInput(ns("panel_tag"), "Identificador", ""),
@@ -398,17 +405,31 @@ ldj_synergy_ui <- function(id) {
           shiny::fileInput(ns("figure_json"), "Restaurar composición JSON", accept = ".json"),
           shiny::downloadButton(ns("figure_json_out"), "Guardar composición JSON")),
         shiny::tags$style(shiny::HTML("
-          .ldj-preview { overflow:auto; min-width:0; max-height:78vh; background:#eef1f5; padding:8px; }
+          .ldj-synergy, .ldj-synergy .tab-content, .ldj-synergy .tab-pane {
+            min-width:0; max-width:100%; }
+          .ldj-synergy .html-widget-output { max-width:100%; }
+          .ldj-synergy .nav-tabs { display:flex; flex-wrap:wrap; }
+          .ldj-synergy .nav-tabs a { white-space:normal; }
+          .ldj-preview { box-sizing:border-box; width:100%; max-width:100%; overflow:auto; min-width:0; max-height:78vh; background:#eef1f5; padding:8px; }
           .ldj-preview:fullscreen { max-height:none; width:100%; height:100%; }
-          .ldj-preview .shiny-plot-output { width:max-content !important; }
+          .ldj-preview .shiny-plot-output { width:100% !important; min-width:0; }
           .ldj-preview img { display:block; max-width:none !important; height:auto !important; }
           .ldj-table-scroll { width:100%; max-width:100%; overflow:auto; max-height:60vh; }
           .ldj-preview-controls { display:flex; flex-wrap:wrap; align-items:center; gap:.7rem; }
           .ldj-preview-controls .form-group { margin-bottom:0; }
-          .ldj-preview-controls select { max-width:100%; }
+          .ldj-preview-controls > *, .ldj-preview-controls select { min-width:0; max-width:100%; }
+          @media(max-width:767px) {
+            .ldj-preview-controls { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .ldj-preview-controls > :first-child { grid-column:1/-1; }
+            .ldj-preview-controls button { white-space:normal; }
+          }
         ")),
         shiny::div(class="ldj-preview-controls",
-          shiny::selectInput(ns("preview_panel"), "Vista previa", c("Composición" = "", stats::setNames(LETTERS[1:12], LETTERS[1:12]))),
+          shiny::selectInput(ns("preview_panel"), "Vista previa", c("Todos los paneles" = ""), selectize = FALSE),
+          shiny::actionButton(ns("preview_all"), "Ver todos los paneles"),
+          shiny::checkboxInput(ns("quick_numbers"), "Mostrar números", TRUE),
+          shiny::selectInput(ns("quick_precision"), "Decimales",
+            c(stats::setNames(as.character(0:4), 0:4), "Automático" = "auto"), selectize = FALSE),
           shiny::tags$label("Escala", shiny::tags$select(
             onchange="this.closest('.ldj-preview-controls').nextElementSibling.dataset.zoom=this.value",
             shiny::tags$option(value="fit", "Ajustar al ancho"),
@@ -423,11 +444,22 @@ ldj_synergy_ui <- function(id) {
           document.querySelectorAll('.ldj-preview').forEach(function(view){
             if(view.dataset.ready) return;
             view.dataset.ready='1';
+            view.previousElementSibling.querySelectorAll('[id$=-quick_numbers],[id$=-quick_precision]').forEach(function(control){
+              control.addEventListener('change',function(event){
+                if (!event.isTrusted) return;
+                const field=control.type==='checkbox' ? 'visible' : 'precision';
+                Shiny.setInputValue(control.id.replace(/quick_(numbers|precision)$/,'quick_format'),
+                  {field:field,value:field==='visible' ? (control.checked ? 'yes' : 'no') : control.value},
+                  {priority:'event'});
+              });
+            });
             function scale(){
               const img=view.querySelector('img');
               if(!img || !img.naturalWidth) return;
               const zoom=view.dataset.zoom;
-              const width=zoom==='fit' ? Math.min(img.naturalWidth,Math.max(1,view.clientWidth-16)) :
+              const box=getComputedStyle(view);
+              const available=view.clientWidth-parseFloat(box.paddingLeft)-parseFloat(box.paddingRight);
+              const width=zoom==='fit' ? Math.min(img.naturalWidth,Math.max(1,available)) :
                 img.naturalWidth*Number(zoom)/100;
               img.style.width=width+'px';
             }
@@ -487,7 +519,20 @@ ldj_synergy_ui <- function(id) {
 
 ldj_synergy_server <- function(id,appearance,figure_size) {
   shiny::moduleServer(id,function(input,output,session) {
-    data <- shiny::reactiveVal(ldj_synergy_demo())
+    teaching <- ldj_didactic_matrix()
+    teaching_benefit <- function(d) {
+      keys <- d[c("dose_A","dose_B","unit_A","unit_B","compound_A","compound_B","experiment_id")]
+      keys$cell_line <- "Didáctica"
+      keys$exposure_hours <- 24
+      list(activity = transform(keys, activity_pct = d$readout_value),
+        viability = transform(keys, viability_pct = round(100 - 25 * (dose_A + dose_B) / 8000)))
+    }
+    teaching_tables <- teaching_benefit(teaching)
+    clear_teaching_benefit <- function() {
+      if (identical(activity(), teaching_tables$activity)) activity(NULL)
+      if (identical(viability(), teaching_tables$viability)) viability(NULL)
+    }
+    data <- shiny::reactiveVal(teaching)
     simulated <- shiny::reactiveVal(TRUE)
     results <- shiny::reactiveVal(ldj_synergy_excess(shiny::isolate(data())))
     stale <- shiny::reactiveVal(FALSE)
@@ -496,13 +541,13 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
       d <- if (teaching) ldj_didactic_matrix() else ldj_synergy_demo(size,scenario)
       if (teaching) {
         shiny::updateSelectInput(session, "unit", selected = "nM")
-        shiny::updateSelectInput(session, "map_visible", selected = "yes")
-        keys <- d[c("dose_A","dose_B","unit_A","unit_B","compound_A","compound_B","experiment_id")]
-        keys$cell_line <- "Didáctica"
-        keys$exposure_hours <- 24
-        activity(transform(keys, activity_pct = d$readout_value))
-        viability(transform(keys, viability_pct = round(100 - 25 * (dose_A + dose_B) / 8000)))
+        tables <- teaching_benefit(d)
+        activity(tables$activity)
+        viability(tables$viability)
         benefit_demo(TRUE)
+      } else {
+        shiny::updateSelectInput(session, "unit", selected = "uM")
+        clear_teaching_benefit()
       }
       z <- ldj_synergy_excess(d)
       data(d); results(z); simulated(TRUE); stale(FALSE)
@@ -512,6 +557,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
       tryCatch({
         file <- input$file
         d <- ldj_mtt_import_table(file$datapath,file$name,sheet=sheet)
+        clear_teaching_benefit()
         data(d); simulated(FALSE); stale(TRUE)
       },error=function(e) shiny::showNotification(conditionMessage(e),type="error"))
     }
@@ -687,9 +733,9 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         tab$failed <- x$failed
         utils::write.csv(tab, path, row.names = FALSE, na = "ND")
       })
-    activity <- shiny::reactiveVal(NULL)
-    viability <- shiny::reactiveVal(NULL)
-    benefit_demo <- shiny::reactiveVal(FALSE)
+    activity <- shiny::reactiveVal(teaching_tables$activity)
+    viability <- shiny::reactiveVal(teaching_tables$viability)
+    benefit_demo <- shiny::reactiveVal(TRUE)
     shiny::observeEvent(input$benefit_demo, {
       example <- expand.grid(dose_A = c(0.1, 0.5, 1), dose_B = c(0.1, 0.5, 1))
       example$unit_A <- example$unit_B <- "uM"
@@ -847,7 +893,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
       ldj_map_annotate(plot, data, column, cfg, x = x, y = y, diverging = diverging,
         categorical = categorical, legacy = legacy, default_digits = digits)
     }
-    benefit_panels <- shiny::reactive({
+    benefit_panels <- function(overrides = list()) {
       d <- benefit()
       shiny::validate(shiny::need(nrow(d) > 0, "La tabla de actividad está vacía."))
       d$a <- dose_factor(ldj_convert_concentration(d$dose_A_M, "M", input$unit))
@@ -873,7 +919,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         graph <- dose_axes(graph)
         if (column == "threshold_class") graph <- graph + ggplot2::scale_fill_manual(
           values = c("Ambos umbrales" = "#157d72", "Por debajo" = "#eadfcf", "ND" = map_settings()$missing))
-        map_tiles(graph, map_settings(), d, column, categorical = column == "threshold_class",
+        map_tiles(graph, map_settings(overrides[[column]]), d, column, categorical = column == "threshold_class",
           legacy = FALSE, digits = 0L)
       }
       selected <- d[which(d$benefit & d$dose_A_M > 0 & d$dose_B_M > 0), , drop = FALSE]
@@ -887,7 +933,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
       list(panel("activity_pct", "Actividad (%)"), panel("viability_pct", "Viabilidad (%)"),
         panel("cytotoxicity_pct", "Citotoxicidad (%)"), panel("threshold_class", "Beneficio farmacológico"),
         region)
-    })
+    }
     output$benefit_plot <- shiny::renderPlot(
       patchwork::wrap_plots(benefit_panels()[1:4], ncol = 2) + patchwork::plot_annotation(tag_levels = "A"))
     output$benefit_csv <- shiny::downloadHandler(filename = function() "LDJ-beneficio.csv",
@@ -916,12 +962,12 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
     shiny::observeEvent(input$save_panel, {
       styles <- panel_overrides()
       key <- panel_key(input$template, input$edit_panel)
-      styles[[key]] <- list(title = input$panel_title, subtitle = input$panel_subtitle, tag = trimws(input$panel_tag),
+      styles[[key]] <- utils::modifyList(styles[[key]] %||% list(), list(title = input$panel_title, subtitle = input$panel_subtitle, tag = trimws(input$panel_tag),
         x = input$panel_x, y = input$panel_y, legend = input$panel_legend,
         font = as.character(input$panel_font %||% 0), margin = as.character(input$panel_margin %||% 0),
         family = input$panel_family %||% "", gap = as.character(input$panel_gap %||% -1),
         ticks_x = as.character(input$panel_ticks_x %||% 0), ticks_y = as.character(input$panel_ticks_y %||% 0),
-        min_width = as.character(input$panel_min_width %||% 0), min_height = as.character(input$panel_min_height %||% 0))
+        min_width = as.character(input$panel_min_width %||% 0), min_height = as.character(input$panel_min_height %||% 0)))
       if (isTRUE(input$map_save_instance)) {
         config <- map_settings()
         for (name in map_keys) styles[[key]][[paste0("map_", name)]] <- as.character(config[[name]])
@@ -963,7 +1009,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
           sequence = input$gallery_sequence %||% "",
           layout = input$gallery_layout %||% "",
           widths = input$gallery_widths %||% "", heights = input$gallery_heights %||% "",
-          values = isTRUE(input$gallery_values)),
+          values = isTRUE(input$gallery_values), observed_field = input$observed_field),
         heat = heat_settings(),
         map_presentation = map_settings(),
         classification = list(scope = input$class_scope %||% "unit",
@@ -1095,10 +1141,13 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
           shiny::updateNumericInput(session, "gallery_surface_theta", value = theta)
           shiny::updateNumericInput(session, "gallery_surface_phi", value = phi)
           shiny::updateNumericInput(session, "gallery_density_adjust", value = adjust)
+          observed_field <- gallery$observed_field %||% "observed"
+          stopifnot(isTRUE(observed_field %in% c("observed", "expected")))
+          shiny::updateSelectInput(session, "observed_field", selected = observed_field)
           context <- gallery$context %||% ""
           marginal <- gallery$marginal_field %||% "observed"
           window <- gallery$isobole_window %||% 10
-          stopifnot(scalar_text(context), isTRUE(marginal %in% c("observed", "score")), valid_number(window, 0, 50))
+          stopifnot(scalar_text(context), isTRUE(marginal %in% c("observed", "expected", "score")), valid_number(window, 0, 50))
           restored_context(context)
           shiny::updateSelectInput(session, "gallery_context", selected = context)
           shiny::updateSelectInput(session, "gallery_marginal_field", selected = marginal)
@@ -1135,7 +1184,8 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
             }
           }
         }
-        config <- ldj_map_config(x$map_presentation)
+        config <- ldj_map_config(x$map_presentation %||% list(visible = "legacy",
+          precision = "auto", border = "", small = "expand"))
         defs <- ldj_map_fields()
         for (key in names(config)) {
           name <- paste0("map_", key)
@@ -1152,6 +1202,8 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
       }, error = function(e) shiny::showNotification("Configuración de Figure Studio no válida.", type = "error"))
     })
     figure_panels <- shiny::reactive({
+      shiny::req(input$template, input$model, input$unit, input$cutoff,
+        !is.null(input$panel_order))
       d <- classified()
       d$a <- dose_factor(ldj_convert_concentration(d$dose_A_M,"M",input$unit))
       d$b <- dose_factor(ldj_convert_concentration(d$dose_B_M,"M",input$unit))
@@ -1226,7 +1278,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
           selected = paste("Experimento", unique(grid$.group)))
         p <- ggplot2::ggplot(grid, ggplot2::aes(a,b,fill=value)) + ggplot2::geom_tile() +
           ggplot2::labs(title = title, subtitle = subtitle, x = paste("A",input$unit), y = paste("B",input$unit),
-            fill = if (diverging) "Exceso (pp)" else "Inhibición (%)") + theme
+            fill = if (diverging) "Exceso (pp)" else if (column == "expected") "Esperada (%)" else "Inhibición (%)") + theme
         if (cfg$scope != "summary") p <- p + ggplot2::facet_wrap(~.group, ncol = 2,
           labeller = ggplot2::label_wrap_gen(24))
         shared <- if (diverging && cfg$shared == "shared")
@@ -1284,9 +1336,15 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
       comparison_subtitle <- sprintf("%s · %d/%d celdas · %d excluidas", d$agreement_models[[1L]],
         sum(d$agreement_common), nrow(d), sum(!d$agreement_common))
       agreement_map <- map + ggplot2::labs(subtitle = comparison_subtitle)
-      linked <- if (input$template %in% c("integral", "benefit") && !is.null(activity_table())) benefit_panels() else
+      benefit_ids <- switch(input$template, integral = c(viability_pct = "K", threshold_class = "L"),
+        benefit = c(activity_pct = "A", viability_pct = "B", cytotoxicity_pct = "C", threshold_class = "E"))
+      linked <- if (length(benefit_ids) && !is.null(activity_table()))
+        benefit_panels(lapply(benefit_ids, function(id) panel_overrides()[[panel_key(input$template, id)]])) else
         lapply(c("Actividad vinculada", "Viabilidad", "Citotoxicidad", "Beneficio", "Regiones"),
           function(x) placeholder(x, "ND · Sin tabla vinculada"))
+      observed_field <- input$observed_field %||% "observed"
+      observed_title <- if (observed_field == "expected") paste("Respuesta esperada ·", input$model) else
+        "Inhibición observada"
       selected_heat <- heat(paste0(input$model, "_excess"), input$model, TRUE)
       gallery_presets <- list(landscape = c("observed", "interaction", "bubble", "observed_expected"),
         concordance = c("concordance", "distribution", "interaction", "observed_expected"),
@@ -1300,8 +1358,10 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         chosen <- if (nzchar(context)) context else levels(d$context)[1L]
         d[as.character(d$context) %in% chosen, , drop = FALSE]
       }
-      build_gallery <- function(id, instance = NULL) {
-        cfg <- if (!is.null(instance)) panel_overrides()[[paste("instance", id, instance, sep = "/")]]
+      build_gallery <- function(id, instance = NULL, panel_id = NULL) {
+        key <- if (!is.null(instance)) paste("instance", id, instance, sep = "/") else
+          panel_key(input$template, panel_id)
+        cfg <- panel_overrides()[[key]]
         numeric_style <- map_settings(cfg)
         pref <- function(field, default, limits = NULL, choices = NULL) {
           value <- cfg[[field]] %||% input[[field]] %||% default
@@ -1320,7 +1380,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
           colours <- ldj_series_colors(state, levels_fixed)
           shapes <- stats::setNames(rep(c(16, 1, 17, 2, 15, 0, 18, 5), length.out = length(levels_fixed)),
             levels_fixed)
-          ggplot2::ggplot(valid, ggplot2::aes(x = .data[[axis]], y = observed,
+          curve <- ggplot2::ggplot(valid, ggplot2::aes(x = .data[[axis]], y = observed,
             colour = .data[[fixed]], shape = .data[[fixed]], group = interaction(context, .data[[fixed]]))) +
             ggplot2::geom_line(linewidth = .5, na.rm = TRUE) + ggplot2::geom_point(size = 1.4, na.rm = TRUE) +
             ggplot2::scale_colour_manual(values = colours) + ggplot2::scale_shape_manual(values = shapes) +
@@ -1332,6 +1392,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
               shape = if (fixed == "a") "Dosis A fija" else "Dosis B fija",
               title = ldj_synergy_gallery()[[id]][1L], subtitle = "Perfiles observados") + theme +
             ggplot2::theme(legend.position = "bottom", legend.key.width = grid::unit(9, "pt"))
+          ldj_numeric_points(curve, valid, "observed", axis, "observed", numeric_style, "%")
         }
         paired <- d[is.finite(d$HSA_excess) & is.finite(d$observed), , drop = FALSE]
         common <- d[is.finite(d$HSA_excess) & is.finite(d$Bliss_excess), , drop = FALSE]
@@ -1345,16 +1406,17 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         }
         switch(id,
           mono = mono_overview,
-          observed = heat("observed", "Inhibición observada", overrides = cfg),
+          observed = heat(observed_field, observed_title, overrides = cfg),
           interaction = heat(paste0(input$model, "_excess"), input$model, TRUE, cfg),
           observed_expected = {
             valid <- d[is.finite(d$score) & is.finite(d$expected) & is.finite(d$observed), , drop = FALSE]
             if (!nrow(valid)) return(nd("Sin celdas evaluables"))
-            ggplot2::ggplot(valid, ggplot2::aes(expected, observed)) +
+            agreement <- ggplot2::ggplot(valid, ggplot2::aes(expected, observed)) +
               ggplot2::geom_abline(slope = 1, intercept = 0, linetype = 2, colour = style$axis) +
               ggplot2::geom_point(colour = "#287FAE", alpha = .65) +
               ggplot2::coord_equal() + ggplot2::labs(title = "Observado frente a esperado", subtitle = input$model,
                 x = "Esperada (%)", y = "Observada (%)") + theme
+            ldj_numeric_points(agreement, valid, "observed", "expected", "observed", numeric_style, "%")
           },
           conditional_a = conditional("a", "b"),
           conditional_b = conditional("b", "a"),
@@ -1470,7 +1532,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
           marginal = {
             grid <- context_grid(pref("gallery_context", selected_context))
             if (!nrow(grid)) return(nd("Contexto experimental no disponible"))
-            field <- pref("gallery_marginal_field", "observed", choices = c("observed", "score"))
+            field <- pref("gallery_marginal_field", "observed", choices = c("observed", "expected", "score"))
             if (!any(is.finite(grid[[field]]))) return(nd("Sin resultados para la variable"))
             scale <- if (field == "score") ggplot2::scale_fill_gradient2(
               low = "#287FAE", mid = "#F5F2ED", high = "#6B1E58", na.value = "#9CA3AF")
@@ -1479,7 +1541,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
             main <- ggplot2::ggplot(grid, ggplot2::aes(a, b, fill = .data[[field]])) +
               ggplot2::geom_tile() + scale +
               ggplot2::labs(title = "Mapa con monoterapias", subtitle = as.character(grid$context[1L]),
-                x = paste("Dosis A", input$unit), y = paste("Dosis B", input$unit), fill = if (field == "score") "Exceso (pp)" else "Inhibición (%)") + theme +
+                x = paste("Dosis A", input$unit), y = paste("Dosis B", input$unit), fill = switch(field, score = "Exceso (pp)", expected = "Esperada (%)", "Inhibición (%)")) + theme +
               ggplot2::scale_x_discrete(limits = levels(grid$a), breaks = function(x) thin_doses(x, 3)) +
               ggplot2::scale_y_discrete(limits = levels(grid$b), breaks = function(x) thin_doses(x, 4)) +
               ggplot2::guides(fill = ggplot2::guide_colorbar(barwidth = grid::unit(20, "mm"))) +
@@ -1690,11 +1752,12 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
         types <- gallery_presets[[input$template]]
         shiny::validate(shiny::need(length(types) > 0L, "Seleccione entre 1 y 12 gráficos con identificadores válidos."))
         panels <- if (identical(input$template, "custom"))
-          Map(build_gallery, unname(types), names(types)) else lapply(types, build_gallery)
+          Map(build_gallery, unname(types), names(types)) else
+            Map(function(type, id) build_gallery(type, panel_id = id), types, LETTERS[seq_along(types)])
       } else panels <- switch(input$template,
         class = list(mono_overview,
-          heat("observed", "Inhibición observada"), selected_heat, efficacy, forest, map),
-        integral = list(mono_a, mono_b, heat("observed", "Inhibición observada"),
+          heat(observed_field, observed_title), selected_heat, efficacy, forest, map),
+        integral = list(mono_a, mono_b, heat(observed_field, observed_title),
           heat("HSA_excess", "HSA", TRUE), heat("Bliss_excess", "Bliss", TRUE),
           if (any(is.finite(d$Loewe_excess))) heat("Loewe_excess", "Loewe", TRUE)
           else placeholder("Loewe", "ND · Sin estimaciones válidas"),
@@ -1711,13 +1774,13 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
       for (id in names(panels)) {
         overrides <- panel_overrides()[[panel_key(input$template, id, gallery_presets$custom)]]
         map_columns <- switch(input$template,
-          class = c(B = "observed", C = paste0(input$model, "_excess")),
-          integral = c(C = "observed", D = "HSA_excess", E = "Bliss_excess", F = "Loewe_excess"),
+          class = c(B = observed_field, C = paste0(input$model, "_excess")),
+          integral = c(C = observed_field, D = "HSA_excess", E = "Bliss_excess", F = "Loewe_excess"),
           character())
         if (id %in% names(map_columns) && any(startsWith(names(overrides) %||% character(), "map_"))) {
           column <- map_columns[[id]]
           if (column != "Loewe_excess" || any(is.finite(d$Loewe_excess)))
-            panels[[id]] <- heat(column, panels[[id]]$labels$title, column != "observed", overrides)
+            panels[[id]] <- heat(column, panels[[id]]$labels$title, endsWith(column, "_excess"), overrides)
         }
         tag <- id
         margin <- ggplot2::margin(8, 10, 7, 8)
@@ -1725,7 +1788,7 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
           labels <- overrides[intersect(c("title", "subtitle", "x", "y"), names(overrides))]
           labels <- labels[vapply(labels, nzchar, logical(1))]
           if (length(labels)) panels[[id]] <- panels[[id]] + do.call(ggplot2::labs, labels)
-          if (nzchar(trimws(overrides$tag))) tag <- trimws(overrides$tag)
+          if (nzchar(trimws(overrides$tag %||% ""))) tag <- trimws(overrides$tag)
           font <- suppressWarnings(as.numeric(overrides$font %||% 0))
           edge <- suppressWarnings(as.numeric(overrides$margin %||% 0))
           if (is.finite(font) && font > 0 && font <= 24)
@@ -1924,6 +1987,63 @@ ldj_synergy_server <- function(id,appearance,figure_size) {
       standard <- ldj_synergy_figure_dimensions(n, input$figure_columns)
       note <- if (any(size < standard * 0.75)) " · Revise legibilidad: tamaño reducido para esta distribución." else ""
       sprintf("%.2f × %.2f in%s", size[["width"]], size[["height"]], note)
+    })
+    panel_choices <- shiny::reactive({
+      shiny::req(identical(input$views, "Clasificación"))
+      panels <- figure_panels()
+      ids <- names(panels)
+      labels <- vapply(ids, function(id) {
+        panel <- panels[[id]]
+        title <- gsub("[[:space:]]+", " ", panel$labels$title %||% "Panel")
+        paste(panel$labels$tag %||% id, title, sep = " — ")
+      }, "")
+      list(labels = stats::setNames(ids, labels),
+        keys = stats::setNames(vapply(ids, function(id) panel_key(input$template, id), ""), ids))
+    })
+    prior_choices <- NULL
+    shiny::observeEvent(panel_choices(), {
+      choices <- panel_choices()
+      if (identical(choices, prior_choices)) return()
+      prior_keys <- prior_choices$keys
+      for (id in c("preview_panel", "edit_panel", "panel_export")) {
+        current <- input[[id]] %||% ""
+        available <- choices$labels
+        if (id != "edit_panel") available <- c(stats::setNames("",
+          if (id == "preview_panel") "Todos los paneles" else "Figura completa"), available)
+        if (nzchar(current) && current %in% names(prior_keys)) {
+          same <- match(prior_keys[[current]], choices$keys)
+          if (!is.na(same)) current <- names(choices$keys)[same]
+        }
+        if (!current %in% available) current <- unname(available[1L])
+        shiny::updateSelectInput(session, id, choices = available, selected = current)
+      }
+      prior_choices <<- choices
+    })
+    shiny::observeEvent(input$preview_all,
+      shiny::updateSelectInput(session, "preview_panel", selected = ""))
+    shiny::observe({
+      selected <- preview_panel()
+      cfg <- map_settings(if (nzchar(selected)) panel_overrides()[[panel_key(input$template, selected)]])
+      shiny::updateCheckboxInput(session, "quick_numbers", value =
+        cfg$visible == "yes" || (cfg$visible == "legacy" && isTRUE(input$gallery_values)))
+      shiny::updateSelectInput(session, "quick_precision", selected = cfg$precision)
+    })
+    shiny::observeEvent(input$quick_format, {
+      change <- input$quick_format
+      if (!isTRUE(change$field %in% c("visible", "precision")) ||
+          !isTRUE(change$value %in% ldj_map_fields()[[change$field]])) return()
+      field <- paste0("map_", change$field)
+      selected <- preview_panel()
+      if (!nzchar(selected)) {
+        shiny::updateSelectInput(session, field, selected = change$value)
+      } else {
+        key <- panel_key(input$template, selected)
+        styles <- panel_overrides()
+        panel <- styles[[key]] %||% list(title = "", subtitle = "", tag = "")
+        panel[[field]] <- change$value
+        styles[[key]] <- panel
+        panel_overrides(styles)
+      }
     })
     preview_panel <- shiny::reactive({
       selected <- input$preview_panel %||% ""

@@ -26,8 +26,13 @@ stopifnot(identical(ldj_synergy_pareto(pareto_fixture), c(TRUE, FALSE, TRUE, TRU
   identical(ldj_synergy_gallery_design("AB/CC", 3), "AB\nCC"),
   inherits(try(ldj_synergy_gallery_design("AB/BA", 2), silent = TRUE), "try-error"))
 chrome <- Sys.which("google-chrome")
-if(nzchar(chrome)) Sys.setenv(CHROMOTE_CHROME=chrome)
-app <- shinytest2::AppDriver$new(app_dir=".",name="synergy",load_timeout=90000)
+if (nzchar(chrome) && !nzchar(Sys.getenv("CHROMOTE_CHROME"))) Sys.setenv(CHROMOTE_CHROME=chrome)
+app <- tryCatch(shinytest2::AppDriver$new(app_dir=".",name="synergy",load_timeout=90000),
+  error=function(error) {
+    if (!grepl("Chrome debugging port not open", conditionMessage(error), fixed=TRUE)) stop(error)
+    message("Chromium startup timed out; retrying browser initialization once.")
+    shinytest2::AppDriver$new(app_dir=".",name="synergy-retry",load_timeout=90000)
+  })
 svg_text <- function(path) {
   parser <- paste(
     "import sys, xml.etree.ElementTree as ET",
@@ -43,6 +48,58 @@ tryCatch({
   app$set_inputs(module="synergy",wait_=FALSE)
   app$wait_for_js("Boolean(document.querySelector('#synergy-plot img')?.naturalWidth)",timeout=60000)
   dir.create("test-artifacts",showWarnings=FALSE)
+  app$wait_for_js("(() => { const p=document.querySelector('#synergy-preview_panel'); return p.options.length===7 && p.value==='' && p.options[2].text.includes('Inhibición observada') && document.querySelector('#synergy-quick_numbers').checked && document.querySelector('#synergy-quick_precision').value==='0' && document.querySelector('#synergy-unit').value==='nM' && document.querySelector('#synergy-scenario').value==='didactic' && document.querySelector('#synergy-preview_all').textContent==='Ver todos los paneles'; })()", timeout=60000)
+  initial <- "test-artifacts/initial-didactic.csv"
+  app$get_download("synergy-csv", filename=initial)
+  didactic <- read.csv(initial)
+  stopifnot(nrow(didactic) == 108L, setequal(didactic$experiment_id, paste0("DID-", 1:3)),
+    all(didactic$observed == round(didactic$observed)),
+    setequal(round(unique(didactic$dose_A_M) * 1e9), c(100, 250, 500, 1000, 2000, 4000)))
+  initial_svg <- "test-artifacts/initial-composition.svg"
+  app$get_download("synergy-svg", filename=initial_svg)
+  initial_labels <- svg_text(initial_svg)
+  stopifnot(grepl("Inhibición observada", initial_labels, fixed=TRUE),
+    grepl("Clasificación por unidad", initial_labels, fixed=TRUE),
+    grepl("A nM", initial_labels, fixed=TRUE))
+  browser <- app$get_chromote_session()
+  for (viewport in list(c(390,844), c(768,1024), c(1366,768))) {
+    browser$Emulation$setDeviceMetricsOverride(width=viewport[1], height=viewport[2], deviceScaleFactor=1, mobile=FALSE)
+    app$wait_for_js("(() => {const v=document.querySelector('.ldj-preview');const img=v.querySelector('img');return img && img.width <= v.clientWidth && v.scrollWidth <= v.clientWidth+1 && document.documentElement.scrollWidth <= innerWidth+1;})()", timeout=30000)
+    app$run_js("document.querySelector('.ldj-preview-controls').scrollIntoView({block:'start'})")
+    shot <- browser$Page$captureScreenshot(format="png", captureBeyondViewport=FALSE)
+    writeBin(jsonlite::base64_dec(shot$data), sprintf("test-artifacts/first-load-%dx%d.png", viewport[1], viewport[2]))
+  }
+  browser$Emulation$clearDeviceMetricsOverride()
+  app$set_inputs(`synergy-preview_panel`="B", timeout_=30000)
+  app$wait_for_js("document.querySelector('#synergy-preview_panel').value === 'B'", timeout=30000)
+  app$run_js("Shiny.setInputValue('synergy-quick_format', {field:'precision', value:'2'}, {priority:'event'})")
+  app$wait_for_js("document.querySelector('#synergy-quick_precision').value === '2'", timeout=30000)
+  app$run_js("Shiny.setInputValue('synergy-quick_format', {field:'precision', value:'0'}, {priority:'event'})")
+  app$wait_for_js("document.querySelector('#synergy-quick_precision').value === '0'", timeout=30000)
+  app$click("synergy-preview_all")
+  app$wait_for_js("document.querySelector('#synergy-preview_panel').value === ''", timeout=30000)
+  app$set_inputs(`synergy-panel_export`="B", timeout_=30000)
+  heat_svg <- "test-artifacts/initial-inhibition.svg"
+  app$get_download("synergy-svg", filename=heat_svg)
+  heat_lines <- readLines(heat_svg, warn=FALSE)
+  integer_labels <- grep(">([0-9]|[1-9][0-9]|100)</text>", heat_lines, value=TRUE)
+  stopifnot(length(integer_labels) >= 36L, !any(grepl(">[0-9]+[.][0-9]+</text>", heat_lines)))
+  app$set_inputs(`synergy-panel_export`="", timeout_=30000)
+  app$run_js("document.querySelector(\"#synergy-views a[data-value='Beneficio farmacológico']\").click()")
+  app$wait_for_js("Boolean(document.querySelector('#synergy-benefit_plot img')?.naturalWidth) && document.querySelector('#synergy-benefit_status')?.textContent.includes('0 filas con viabilidad ND')", timeout=60000)
+  for (scenario in c("second", "generic")) {
+    app$run_js("document.querySelector('#synergy-views a[data-value=Datos]').click()")
+    app$set_inputs(`synergy-scenario`=scenario, timeout_=30000)
+    app$click("synergy-example")
+    app$run_js("document.querySelector('#synergy-views a[data-value=Clasificación]').click()")
+    app$get_download("synergy-csv", filename=file.path("test-artifacts", paste0("historical-", scenario, ".csv")))
+  }
+  original_a <- read.csv("test-artifacts/historical-generic.csv")
+  original_b <- read.csv("test-artifacts/historical-second.csv")
+  stopifnot(nrow(original_a) == 108L, nrow(original_b) == 108L,
+    !identical(original_a$observed, original_b$observed))
+  app$set_inputs(`synergy-template`="unit", `synergy-map_visible`="legacy",
+    `synergy-map_precision`="auto", `synergy-map_border`="", `synergy-map_small`="expand", timeout_=30000)
   path <- "test-artifacts/synergy-classification.svg"
   app$get_download("synergy-svg",filename=path)
   stopifnot(any(grepl("Clasificación por unidad",readLines(path,warn=FALSE),fixed=TRUE)))
@@ -191,9 +248,10 @@ tryCatch({
   }
   write.csv(scaled, "test-artifacts/editorial-dimensions.csv", row.names = FALSE)
   app$get_download("synergy-csv", filename = "test-artifacts/synergy-style-before.csv")
-  app$set_inputs(`synergy-template` = "class", `synergy-panel_export` = "F",
+  app$set_inputs(`synergy-template` = "class",
     `synergy-class_scope` = "experiment", `synergy-heat_ticks_y` = 4,
     `synergy-benefit_legend` = "Ensayo y condición", timeout_=30000)
+  app$set_inputs(`synergy-panel_export` = "F", timeout_=30000)
   exported_class <- "test-artifacts/classification-by-experiment.svg"
   app$get_download("synergy-svg", filename = exported_class)
   stopifnot(grepl("Clasificación por experimento", svg_text(exported_class), fixed = TRUE))
@@ -324,11 +382,15 @@ tryCatch({
   app$get_download("synergy-svg", filename = keyed)
   stopifnot(grepl("Instancia segunda", svg_text(keyed), fixed = TRUE),
     !grepl("Instancia primera", svg_text(keyed), fixed = TRUE))
-  app$set_inputs(`synergy-gallery_sequence` = "observed@integer,observed@decimal",
-    `synergy-panel_export` = "A", `synergy-map_visible` = "yes", `synergy-map_save_instance` = TRUE,
+  app$set_inputs(`synergy-gallery_sequence` = "observed@integer,observed@decimal", timeout_=30000)
+  app$wait_for_js("Array.from(document.querySelector('#synergy-preview_panel').options).filter(x => x.text.includes('Inhibición observada')).length === 2", timeout=30000)
+  app$set_inputs(`synergy-panel_export` = "A", `synergy-map_visible` = "yes", `synergy-map_save_instance` = TRUE,
     `synergy-edit_panel` = "A", `synergy-map_precision` = "0", `synergy-map_prefix` = "INT:",
     timeout_ = 30000)
   app$run_js("document.querySelector('#synergy-save_panel').click()")
+  first_config <- "test-artifacts/numeric-first-instance.json"
+  app$get_download("synergy-figure_json_out", filename = first_config)
+  stopifnot(identical(jsonlite::read_json(first_config)$panels[["instance/observed/integer"]]$map_prefix, "INT:"))
   app$set_inputs(`synergy-edit_panel` = "B", `synergy-map_precision` = "2",
     `synergy-map_prefix` = "DEC:", `synergy-map_palette` = "viridis", timeout_ = 30000)
   app$run_js("document.querySelector('#synergy-save_panel').click()")

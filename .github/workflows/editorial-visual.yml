@@ -1,7 +1,7 @@
-name: Beta 0.10.2 visual regression
+name: Beta 0.10.3 visual regression
 on:
   push:
-    branches: [feature/beta-0.10.2-editorial]
+    branches: [fix/beta-0.10.3-first-load]
   pull_request:
     branches: [demo]
 permissions:
@@ -65,6 +65,11 @@ jobs:
           LDJ_TEST_ZIP: absent
         run: |
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          chrome="$(command -v google-chrome)"
+          wrapper="$RUNNER_TEMP/ldj-chrome"
+          printf '#!/bin/sh\nexec "%s" --no-sandbox --disable-dev-shm-usage "$@"\n' "$chrome" > "$wrapper"
+          chmod +x "$wrapper"
+          export CHROMOTE_CHROME="$wrapper"
           Rscript ../audit/tests/numeric-editorial.R
           Rscript ../audit/tests/synergy-browser.R
       - name: Exercise long labels and dense synthetic matrices
@@ -84,5 +89,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: beta-0.10.2-visual-regression
+          name: beta-0.10.3-visual-regression
           path: candidate/test-artifacts
